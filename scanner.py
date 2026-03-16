@@ -260,7 +260,7 @@ def fetch_player_cards(players: list, sport: str):
     # Step A: pricing from mv_card_metrics
     try:
         metrics = supabase.table("mv_card_metrics") \
-            .select("canonical_name, grade, player_name, current_price, avg_price_30d, card_number, last_sale_date") \
+            .select("canonical_name, grade, player_name, current_price, avg_price_30d, card_number, last_sale_date, set_name, set_year, variation") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .execute()
