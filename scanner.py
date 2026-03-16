@@ -52,6 +52,46 @@ EXCL = (
     ' -autograph -auto -signed -"art card" -"custom card"'
 )
 
+TEAM_NAMES = {
+    # MLB
+    "Baltimore Orioles", "Boston Red Sox", "New York Yankees", "Los Angeles Dodgers",
+    "Chicago Cubs", "Houston Astros", "Atlanta Braves", "San Francisco Giants",
+    "St. Louis Cardinals", "Philadelphia Phillies", "New York Mets", "Los Angeles Angels",
+    "Seattle Mariners", "Toronto Blue Jays", "Tampa Bay Rays", "Minnesota Twins",
+    "Cleveland Guardians", "Detroit Tigers", "Kansas City Royals", "Chicago White Sox",
+    "Texas Rangers", "Oakland Athletics", "San Diego Padres", "Colorado Rockies",
+    "Arizona Diamondbacks", "Miami Marlins", "Pittsburgh Pirates", "Cincinnati Reds",
+    "Milwaukee Brewers", "Washington Nationals",
+    # NBA
+    "Los Angeles Lakers", "Boston Celtics", "Chicago Bulls", "Golden State Warriors",
+    "Miami Heat", "San Antonio Spurs", "Dallas Mavericks", "Phoenix Suns",
+    "Denver Nuggets", "Milwaukee Bucks", "Brooklyn Nets", "Philadelphia 76ers",
+    "Toronto Raptors", "New York Knicks", "Cleveland Cavaliers", "Oklahoma City Thunder",
+    "Memphis Grizzlies", "New Orleans Pelicans", "Sacramento Kings", "Utah Jazz",
+    "Portland Trail Blazers", "Indiana Pacers", "Atlanta Hawks", "Charlotte Hornets",
+    "Detroit Pistons", "Washington Wizards", "Orlando Magic", "Minnesota Timberwolves",
+    "Houston Rockets", "Los Angeles Clippers",
+    # NFL
+    "Kansas City Chiefs", "San Francisco 49ers", "Dallas Cowboys", "New England Patriots",
+    "Green Bay Packers", "Pittsburgh Steelers", "Baltimore Ravens", "Buffalo Bills",
+    "Philadelphia Eagles", "Cincinnati Bengals", "Los Angeles Rams", "Miami Dolphins",
+    "Las Vegas Raiders", "Denver Broncos", "Seattle Seahawks", "Tampa Bay Buccaneers",
+    "New Orleans Saints", "Minnesota Vikings", "Chicago Bears", "New York Giants",
+    "New York Jets", "Washington Commanders", "Carolina Panthers", "Atlanta Falcons",
+    "Detroit Lions", "Arizona Cardinals", "Los Angeles Chargers", "Indianapolis Colts",
+    "Tennessee Titans", "Jacksonville Jaguars", "Cleveland Browns", "Houston Texans",
+    # NHL
+    "Toronto Maple Leafs", "Montreal Canadiens", "Boston Bruins", "New York Rangers",
+    "Chicago Blackhawks", "Detroit Red Wings", "Philadelphia Flyers", "Edmonton Oilers",
+    "Pittsburgh Penguins", "Colorado Avalanche", "Tampa Bay Lightning", "Vegas Golden Knights",
+    "Carolina Hurricanes", "Florida Panthers", "New York Islanders", "Washington Capitals",
+    "Minnesota Wild", "St. Louis Blues", "Nashville Predators", "Winnipeg Jets",
+    "Calgary Flames", "Vancouver Canucks", "Ottawa Senators", "Buffalo Sabres",
+    "New Jersey Devils", "Columbus Blue Jackets", "San Jose Sharks", "Anaheim Ducks",
+    "Seattle Kraken", "Dallas Stars", "Arizona Coyotes", "Quebec Nordiques",
+    "Hartford Whalers", "Atlanta Thrashers",
+}
+
 CATEGORIES = {
     "MLB": {
         "sport":         "MLB",
@@ -215,26 +255,28 @@ def get_candidate_players(title: str, sport: str) -> list:
     """Two-stage player matching: fast word index then partial_ratio."""
     title_lower = title.lower()
     word_map    = _word_to_players.get(sport, {})
-
+    
     # Stage 1: inverted index
     title_words   = [w for w in re.split(r'\W+', title_lower) if len(w) >= MIN_WORD_LEN]
     candidate_set = set()
     for word in title_words:
         for player in word_map.get(word, []):
             candidate_set.add(player)
-
+            
     if not candidate_set:
         return []
-
-    # Stage 2: partial_ratio on small candidate set
+        
+    # Stage 2: partial_ratio on small candidate set, excluding team names
     cleaned_map = _cleaned_to_original.get(sport, {})
     matches = []
     for original_name in candidate_set:
+        if original_name in TEAM_NAMES:
+            continue
         cleaned = strip_suffix(original_name).lower()
         score   = fuzz.partial_ratio(cleaned, title_lower)
         if score >= 92:
             matches.append((original_name, score))
-
+            
     matches.sort(key=lambda x: -x[1])
     return [m[0] for m in matches]
 
