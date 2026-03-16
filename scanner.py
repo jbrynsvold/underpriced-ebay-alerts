@@ -25,8 +25,8 @@ EBAY_TOKEN_URL  = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
 
-DISCOUNT_THRESHOLD = 1.05   # alert if eBay price <= market * this
-MIN_SAVINGS        = 0      # minimum $ savings to alert
+DISCOUNT_THRESHOLD = 1   # alert if eBay price <= market * this
+MIN_SAVINGS        = 2      # minimum $ savings to alert
 MAX_SAVINGS_PCT    = 90     # ignore suspiciously large discounts
 MIN_MATCH_SCORE    = 65     # minimum card scorer score to match
 MIN_WORD_LEN       = 4      # minimum word length for player name index
