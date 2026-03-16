@@ -177,24 +177,14 @@ def variation_tokens(variation: str) -> list:
 def load_player_index(sport: str):
     if sport in _player_index_loaded:
         return
-
     log.info(f"Loading {sport} player names...")
-    all_names = []
-    from_idx  = 0
-    batch     = 1000
 
-    while True:
-        result = supabase.table("player_name_index") \
-            .select("player_name") \
-            .eq("sport", sport) \
-            .range(from_idx, from_idx + batch - 1) \
-            .execute()
-        if not result.data:
-            break
-        all_names.extend(r["player_name"] for r in result.data if r.get("player_name"))
-        if len(result.data) < batch:
-            break
-        from_idx += batch
+    result = supabase.table("player_name_index") \
+        .select("player_name") \
+        .eq("sport", sport) \
+        .limit(50000) \
+        .execute()
+    all_names = [r["player_name"] for r in (result.data or []) if r.get("player_name")]
 
     word_map    = {}
     cleaned_map = {}
