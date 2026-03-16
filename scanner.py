@@ -26,7 +26,7 @@ EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
 
 DISCOUNT_THRESHOLD = 1.05   # alert if eBay price <= market * this
-MIN_SAVINGS        = 3      # minimum $ savings to alert
+MIN_SAVINGS        = 0      # minimum $ savings to alert
 MAX_SAVINGS_PCT    = 90     # ignore suspiciously large discounts
 MIN_MATCH_SCORE    = 50     # minimum card scorer score to match
 MIN_WORD_LEN       = 4      # minimum word length for player name index
@@ -444,11 +444,11 @@ def search_ebay(cat: dict, listing_type: str) -> list:
 
     for page in range(2):
         if listing_type == "bin":
-            filter_str = "buyingOptions:{FIXED_PRICE},price:[20..]"
+            filter_str = "buyingOptions:{FIXED_PRICE},price:[10..]"
             sort       = "-newlyListed"
         else:
             ten_min    = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            filter_str = f"buyingOptions:{{AUCTION}},itemEndDate:[..{ten_min}],price:[20..]"
+            filter_str = f"buyingOptions:{{AUCTION}},itemEndDate:[..{ten_min}],price:[5..]"
             sort       = "-endingSoonest"
 
         params = {
