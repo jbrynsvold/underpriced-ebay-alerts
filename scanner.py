@@ -106,7 +106,12 @@ log = logging.getLogger(__name__)
 # State (persists across runs since process runs continuously)
 # ===========================================================================
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+from supabase.client import ClientOptions
+supabase: Client = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY,
+    options=ClientOptions(postgrest_client_timeout=30)
+)
 
 seen_urls: set = set()          # in-memory dedup — persists for process lifetime
 
