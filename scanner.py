@@ -399,7 +399,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
         if v_tokens:
             found_v = [t for t in v_tokens if t in title_lower]
             ratio_v = len(found_v) / len(v_tokens)
-            if ratio_v < 0.5:
+            if ratio_v <= 0.5:
                 return -1.0
             score += ratio_v * 60
             if len(found_v) == len(v_tokens):
