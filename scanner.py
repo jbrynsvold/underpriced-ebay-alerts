@@ -248,19 +248,15 @@ def get_candidate_players(title: str, sport: str) -> list:
 # ===========================================================================
 
 def fetch_player_cards(players: list, sport: str):
-    """
-    Fetch mv_card_metrics for players, enrich with set_name/set_year/variation
-    from cards + card_sets join. Results cached in _player_card_cache[sport].
-    """
     cache    = _player_card_cache.setdefault(sport, {})
     uncached = [p for p in players if p not in cache]
     if not uncached:
         return
 
-    # Step A: pricing from mv_card_metrics
     try:
         metrics = supabase.table("mv_card_metrics") \
-            .select("canonical_name, grade, player_name, current_price, avg_price_30d, card_number, last_sale_date, set_name, set_year, variation") \
+            .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
+                    "card_number, last_sale_date, set_name, set_year, variation") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .execute()
@@ -275,37 +271,11 @@ def fetch_player_cards(players: list, sport: str):
             cache[p] = []
         return
 
-    # Step B: set_name, set_year, variation from cards join card_sets
-    canonical_names = list({r["canonical_name"] for r in metrics.data})
-    card_meta = {}
-    try:
-        cards_result = supabase.table("cards") \
-            .select("canonical_name, variation, card_sets!cards_set_id_fkey(name, year)") \
-            .in_("canonical_name", canonical_names) \
-            .execute()
-
-        for row in (cards_result.data or []):
-            set_info = row.get("card_sets")
-            if isinstance(set_info, list):
-                set_info = set_info[0] if set_info else {}
-            card_meta[row["canonical_name"]] = {
-                "set_name":  (set_info or {}).get("name", ""),
-                "set_year":  (set_info or {}).get("year"),
-                "variation": row.get("variation", ""),
-            }
-    except Exception as e:
-        log.warning(f"cards join error (continuing without set data): {e}")
-
-    # Merge and group by player
     grouped = {}
     for row in metrics.data:
-        meta = card_meta.get(row["canonical_name"], {})
         enriched = {
             **row,
             "market_price": row.get("avg_price_30d") or row.get("current_price") or 0,
-            "set_name":     meta.get("set_name"),
-            "set_year":     meta.get("set_year"),
-            "variation":    meta.get("variation"),
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
 
