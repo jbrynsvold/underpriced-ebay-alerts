@@ -568,6 +568,7 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         if market_price <= 0:
             continue
         if price >= market_price * DISCOUNT_THRESHOLD:
+            log.info(f"  PRICE SKIP: {matched_card['canonical_name']} | eBay: ${price:.2f} | Market: ${market_price:.2f} | Threshold: ${market_price * DISCOUNT_THRESHOLD:.2f}")
             continue
 
         savings_pct = round((market_price - price) / market_price * 100)
