@@ -281,20 +281,21 @@ def fetch_player_cards(players: list, sport: str):
 # ===========================================================================
 
 def parse_title(title: str) -> dict:
-    title_lower = title.lower()
-    ebay_year   = None
-    ebay_year2  = None
-
     full_year = re.search(r'\b(19|20)\d{2}\b', title)
-    if full_year:
-        ebay_year = int(full_year.group())
-    else:
-        short = re.search(r'\b(\d{2})-(\d{2})\b', title)
-        if short:
-            y1, y2 = int(short.group(1)), int(short.group(2))
-            if (y1 >= 90 or y1 <= 26) and (y2 >= 90 or y2 <= 26):
-                ebay_year  = (1900 if y1 >= 90 else 2000) + y1
-                ebay_year2 = 2000 + y2
+if full_year:
+    ebay_year = int(full_year.group())
+    # Handle hockey-style 1995-96 hyphenated years
+    hockey_year = re.search(r'\b(19|20)(\d{2})-(\d{2})\b', title)
+    if hockey_year:
+        suffix = int(hockey_year.group(3))
+        ebay_year2 = 2000 + suffix if suffix <= 30 else 1900 + suffix
+else:
+    short = re.search(r'\b(\d{2})-(\d{2})\b', title)
+    if short:
+        y1, y2 = int(short.group(1)), int(short.group(2))
+        if (y1 >= 90 or y1 <= 26) and (y2 >= 90 or y2 <= 26):
+            ebay_year  = (1900 if y1 >= 90 else 2000) + y1
+            ebay_year2 = 2000 + y2
 
     card_num_match = re.search(r'#\s*(\w+)', title)
     ebay_card_num  = card_num_match.group(1).lstrip('0') if card_num_match else None
