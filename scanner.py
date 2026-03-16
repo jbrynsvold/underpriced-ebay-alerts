@@ -28,7 +28,7 @@ EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
 DISCOUNT_THRESHOLD = 1.05   # alert if eBay price <= market * this
 MIN_SAVINGS        = 0      # minimum $ savings to alert
 MAX_SAVINGS_PCT    = 90     # ignore suspiciously large discounts
-MIN_MATCH_SCORE    = 50     # minimum card scorer score to match
+MIN_MATCH_SCORE    = 60     # minimum card scorer score to match
 MIN_WORD_LEN       = 4      # minimum word length for player name index
 
 BASE_VARIATIONS = {"", "base", "none", "base card", "n/a"}
