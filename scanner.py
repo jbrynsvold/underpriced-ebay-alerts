@@ -78,6 +78,9 @@ EXCL_KEYWORDS = [
     "uncut", "panels",
     "tcg pocket", "pocket",
     "japanese", "chinese", "korean",
+    "pick your player", "pick & choose", "pick from list",
+    "fill your set", "build a lot", "set break",
+    "card pick", "singles",
 ]
 
 # Japanese set codes that slip through the language filter
@@ -89,6 +92,9 @@ EXCL_SPORTS = (
     '-"you pick" -"lot of" -"choose your" -"complete your set" -"u pick"'
     ' -"set lot" -"select a card" -"pick a card" -"pick your card"'
     ' -autograph -auto -signed -"art card" -"custom card"'
+    ' -"pick your player" -"pick & choose" -"pick from list"'
+    ' -"fill your set" -"complete a set" -"complete the set"'
+    ' -"take your pick" -"set break"'
 )
 
 EXCL_TCG = (
@@ -101,6 +107,9 @@ EXCL_TCG = (
     ' -"uncut" -"panels" -"tcg pocket" -"pocket"'
     ' -"japanese" -"chinese" -"korean"'
     ' -PSA -BGS -SGC -CGC -graded -autograph -auto'
+    ' -"pick your player" -"pick & choose" -"pick from list"'
+    ' -"fill your set" -"complete a set" -"complete the set"'
+    ' -"take your pick" -"set break"'
 )
 
 # City/partial team name fragments that pollute the player index
