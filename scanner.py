@@ -25,11 +25,11 @@ EBAY_TOKEN_URL  = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
 
-DISCOUNT_THRESHOLD = 1   # alert if eBay price <= market * this
-MIN_SAVINGS        = 2      # minimum $ savings to alert
-MAX_SAVINGS_PCT    = 90     # ignore suspiciously large discounts
-MIN_MATCH_SCORE    = 65     # minimum card scorer score to match
-MIN_WORD_LEN       = 4      # minimum word length for player name index
+DISCOUNT_THRESHOLD = 1
+MIN_SAVINGS        = 2
+MAX_SAVINGS_PCT    = 90
+MIN_MATCH_SCORE    = 65
+MIN_WORD_LEN       = 4
 
 BASE_VARIATIONS = {"", "base", "none", "base card", "n/a"}
 
@@ -44,6 +44,13 @@ STRONG_NON_BASE = {
     "shimmer", "wave", "pulsar", "disco", "glossy", "lazer",
     "stamped", "prerelease", "shadowless", "cosmos",
     "reverse", "fullart", "altart", "promo", "kaboom", "horizontal",
+}
+
+# Pokemon generation prefixes — optional in matching, don't penalize if missing
+POKEMON_GENERATION_TOKENS = {
+    "scarlet", "violet", "sword", "shield", "sun", "moon",
+    "black", "white", "diamond", "pearl", "heartgold", "soulsilver",
+    "winds", "waves",
 }
 
 EXCL = (
@@ -143,7 +150,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ===========================================================================
-# State (persists across runs since process runs continuously)
+# State
 # ===========================================================================
 
 from supabase.client import ClientOptions
@@ -153,21 +160,71 @@ supabase: Client = create_client(
     options=ClientOptions(postgrest_client_timeout=30)
 )
 
-seen_urls: set = set()          # in-memory dedup — persists for process lifetime
+seen_urls: set = set()
 
 _ebay_token        = None
 _ebay_token_expiry = 0
 
-# sport -> { player_name -> [card dicts] }
 _player_card_cache: dict = {}
-
-# sport -> { word -> set(player_names) }
-_word_to_players: dict = {}
-
-# sport -> { cleaned_name -> original_name }
+_word_to_players:   dict = {}
 _cleaned_to_original: dict = {}
+_player_index_loaded: set = set()
 
-_player_index_loaded: set = set()  # tracks which sports are loaded
+# ===========================================================================
+# Helpers
+# ===========================================================================
+
+def fmt(n: float) -> str:
+    return f"${n:,.2f}"
+
+# ===========================================================================
+# Title normalization
+# ===========================================================================
+
+TITLE_EXPANSIONS = [
+    # Pokemon — current/modern series
+    (r'\bS&V\b',                        'scarlet violet'),
+    (r'\bScarlet\s*&\s*Violet\b',       'scarlet violet'),
+    (r'\bSV\s+(?=\d)',                  'scarlet violet '),
+    (r'\bSWSH\b',                       'sword shield'),
+    (r'\bSword\s*&\s*Shield\b',         'sword shield'),
+    (r'\bS&S\b',                        'sword shield'),
+    (r'\bSun\s*&\s*Moon\b',             'sun moon'),
+    (r'\bS&M\b',                        'sun moon'),
+    (r'\bME:\s*',                       'mega evolution '),
+    (r'\bMega\s+Evo\b',                 'mega evolution'),
+    (r'\bB&W\b',                        'black white'),
+    (r'\bBlack\s*&\s*White\b',          'black white'),
+    (r'\bBW\b(?=\s)',                   'black white'),
+    (r'\bD&P\b',                        'diamond pearl'),
+    (r'\bDiamond\s*&\s*Pearl\b',        'diamond pearl'),
+    (r'\bHG\s*SS\b',                    'heartgold soulsilver'),
+    (r'\bHeartGold\s*&?\s*SoulSilver\b','heartgold soulsilver'),
+    (r'\bEvo\s+Skies\b',               'evolving skies'),
+    (r'\bPrismatic\s+Evo\b',           'prismatic evolutions'),
+    # Pokemon — upcoming Winds & Waves generation
+    (r'\bW&W\b',                        'winds waves'),
+    (r'\bWinds\s*&\s*Waves\b',          'winds waves'),
+    (r'\bWW\b(?=\s+\d)',               'winds waves '),
+    # Sports — Upper Deck
+    (r'\bUD\b',                         'upper deck'),
+    (r'\bU\.D\.\b',                     'upper deck'),
+    # Sports — Bowman
+    (r'\bBCP\b',                        'bowman chrome prospects'),
+    (r'\bBDP\b',                        'bowman draft picks'),
+    (r'\bBC\b(?=\s+(?:Pros|Draft|Prospect))', 'bowman chrome'),
+    # Sports — Topps
+    (r'\bA&G\b',                        'allen ginter'),
+    (r'\bSP\s+Auth\b',                 'sp authentic'),
+    # General
+    (r'\s*&\s*',                        ' '),
+]
+
+def normalize_title(title: str) -> str:
+    result = title
+    for pattern, replacement in TITLE_EXPANSIONS:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    return result
 
 # ===========================================================================
 # eBay token
@@ -177,7 +234,6 @@ def get_ebay_token() -> str:
     global _ebay_token, _ebay_token_expiry
     if _ebay_token and time.time() < _ebay_token_expiry:
         return _ebay_token
-
     auth = base64.b64encode(
         f"{EBAY_CLIENT_ID}:{EBAY_CLIENT_SECRET}".encode()
     ).decode()
@@ -185,7 +241,7 @@ def get_ebay_token() -> str:
         EBAY_TOKEN_URL,
         headers={
             "Authorization": f"Basic {auth}",
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type":  "application/x-www-form-urlencoded",
         },
         data=f"grant_type=client_credentials&scope={EBAY_SCOPE}",
     )
@@ -208,8 +264,16 @@ def strip_suffix(name: str) -> str:
 def tokenize(text: str, min_len: int = 3) -> list:
     return [w.lower() for w in re.split(r'[\W_]+', text) if len(w) >= min_len]
 
-def set_tokens(set_name: str) -> list:
-    return [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
+def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
+    """Returns (required_tokens, optional_tokens)."""
+    all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
+    if is_tcg:
+        required = [t for t in all_tokens if t not in POKEMON_GENERATION_TOKENS]
+        optional = [t for t in all_tokens if t in POKEMON_GENERATION_TOKENS]
+    else:
+        required = all_tokens
+        optional = []
+    return required, optional
 
 def variation_tokens(variation: str) -> list:
     stop = {"and", "the", "of", "for", "a"}
@@ -223,18 +287,15 @@ def load_player_index(sport: str):
     if sport in _player_index_loaded:
         return
     log.info(f"Loading {sport} player names...")
-
     result = supabase.table("player_name_index") \
         .select("player_name") \
         .eq("sport", sport) \
         .limit(50000) \
         .execute()
     all_names = [r["player_name"] for r in (result.data or []) if r.get("player_name")]
-
     word_map    = {}
     cleaned_map = {}
     seen        = set()
-
     for name in all_names:
         if name in seen:
             continue
@@ -244,30 +305,21 @@ def load_player_index(sport: str):
         for word in cleaned.split():
             if len(word) >= MIN_WORD_LEN:
                 word_map.setdefault(word, set()).add(name)
-
-    _word_to_players[sport]      = word_map
-    _cleaned_to_original[sport]  = cleaned_map
+    _word_to_players[sport]     = word_map
+    _cleaned_to_original[sport] = cleaned_map
     _player_index_loaded.add(sport)
     log.info(f"{sport}: loaded {len(cleaned_map)} players, {len(word_map)} index words")
 
-
 def get_candidate_players(title: str, sport: str) -> list:
-    """Two-stage player matching: fast word index then partial_ratio."""
-    title_lower = title.lower()
+    title_lower = normalize_title(title).lower()
     word_map    = _word_to_players.get(sport, {})
-    
-    # Stage 1: inverted index
     title_words   = [w for w in re.split(r'\W+', title_lower) if len(w) >= MIN_WORD_LEN]
     candidate_set = set()
     for word in title_words:
         for player in word_map.get(word, []):
             candidate_set.add(player)
-            
     if not candidate_set:
         return []
-        
-    # Stage 2: partial_ratio on small candidate set, excluding team names
-    cleaned_map = _cleaned_to_original.get(sport, {})
     matches = []
     for original_name in candidate_set:
         if original_name in TEAM_NAMES:
@@ -276,7 +328,6 @@ def get_candidate_players(title: str, sport: str) -> list:
         score   = fuzz.partial_ratio(cleaned, title_lower)
         if score >= 92:
             matches.append((original_name, score))
-            
     matches.sort(key=lambda x: -x[1])
     return [m[0] for m in matches]
 
@@ -289,11 +340,10 @@ def fetch_player_cards(players: list, sport: str):
     uncached = [p for p in players if p not in cache]
     if not uncached:
         return
-
     try:
         metrics = supabase.table("mv_card_metrics") \
             .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
-                    "card_number, last_sale_date, set_name, set_year, variation") \
+                    "card_number, last_sale_date, set_name, set_year, variation, sport") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .execute()
@@ -302,12 +352,10 @@ def fetch_player_cards(players: list, sport: str):
         for p in uncached:
             cache[p] = []
         return
-
     if not metrics.data:
         for p in uncached:
             cache[p] = []
         return
-
     grouped = {}
     for row in metrics.data:
         enriched = {
@@ -315,10 +363,8 @@ def fetch_player_cards(players: list, sport: str):
             "market_price": row.get("avg_price_30d") or row.get("current_price") or 0,
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
-
     for player, cards in grouped.items():
         cache[player] = cards
-
     for p in uncached:
         if p not in cache:
             cache[p] = []
@@ -328,26 +374,27 @@ def fetch_player_cards(players: list, sport: str):
 # ===========================================================================
 
 def parse_title(title: str) -> dict:
-    title_lower = title.lower()
+    normalized  = normalize_title(title)
+    title_lower = normalized.lower()
     ebay_year   = None
     ebay_year2  = None
 
-    full_year = re.search(r'\b(19|20)\d{2}\b', title)
+    full_year = re.search(r'\b(19|20)\d{2}\b', normalized)
     if full_year:
         ebay_year = int(full_year.group())
-        hockey_year = re.search(r'\b(19|20)(\d{2})-(\d{2})\b', title)
+        hockey_year = re.search(r'\b(19|20)(\d{2})-(\d{2})\b', normalized)
         if hockey_year:
             suffix = int(hockey_year.group(3))
             ebay_year2 = 2000 + suffix if suffix <= 30 else 1900 + suffix
     else:
-        short = re.search(r'\b(\d{2})-(\d{2})\b', title)
+        short = re.search(r'\b(\d{2})-(\d{2})\b', normalized)
         if short:
             y1, y2 = int(short.group(1)), int(short.group(2))
             if (y1 >= 90 or y1 <= 26) and (y2 >= 90 or y2 <= 26):
                 ebay_year  = (1900 if y1 >= 90 else 2000) + y1
                 ebay_year2 = 2000 + y2
 
-    card_num_match = re.search(r'#\s*(\w+)', title)
+    card_num_match = re.search(r'#\s*(\w+)', normalized)
     ebay_card_num  = card_num_match.group(1).lstrip('0') if card_num_match else None
 
     return {
@@ -363,37 +410,67 @@ def score_card_match(parsed: dict, card: dict) -> float:
     ebay_year2    = parsed["ebay_year2"]
     ebay_card_num = parsed["ebay_card_num"]
 
-    set_year   = card.get("set_year")
-    set_name   = card.get("set_name") or ""
-    variation  = (card.get("variation") or "").strip()
+    set_year    = card.get("set_year")
+    set_name    = card.get("set_name") or ""
+    variation   = (card.get("variation") or "").strip()
     db_card_num = (card.get("card_number") or "").lstrip("0")
-    is_base    = variation.lower() in BASE_VARIATIONS
+    is_base     = variation.lower() in BASE_VARIATIONS
+    sport       = card.get("sport", "")
+    is_tcg      = sport in {"Pokemon", "Yu-Gi-Oh", "Other TCG", "Non-Sport Vintage"}
 
-    # Hard filter: year
+    # --- Auto/autograph hard filter ---
+    combined_db   = (set_name + " " + variation).lower()
+    db_is_auto    = any(w in combined_db for w in ["autograph", " auto", "/a "])
+    title_is_auto = any(w in title_lower for w in ["autograph", "/a ", " auto "])
+    if db_is_auto and not title_is_auto:
+        return -1.0
+    if title_is_auto and not db_is_auto:
+        return -1.0
+
+    # --- X-Fractor hard filter ---
+    db_is_xfractor    = "x-fractor" in combined_db or "xfractor" in combined_db
+    title_is_xfractor = "x-fractor" in title_lower or "xfractor" in title_lower
+    if db_is_xfractor and not title_is_xfractor:
+        return -1.0
+    if title_is_xfractor and not db_is_xfractor:
+        return -1.0
+
+    # --- Year hard filter — prefer later year for hyphenated ranges ---
+    preferred_year = ebay_year2 if ebay_year2 else ebay_year
     if set_year and (ebay_year or ebay_year2):
-        if ebay_year != set_year and ebay_year2 != set_year:
+        if preferred_year != set_year and ebay_year != set_year:
             return -1.0
 
-    # Hard filter: card number
+    # --- Card number hard filter ---
     if ebay_card_num and db_card_num:
         if ebay_card_num != db_card_num:
             return -1.0
 
     score = 0.0
 
-    # Set name matching
-    s_tokens = set_tokens(set_name)
-    if s_tokens:
-        found = [t for t in s_tokens if t in title_lower]
-        score += (len(found) / len(s_tokens)) * 60
-        if len(found) == len(s_tokens):
+    # --- Set name matching ---
+    set_name_normalized = normalize_title(set_name)
+    required_tokens, optional_tokens = set_tokens(set_name_normalized, is_tcg=is_tcg)
+
+    if required_tokens:
+        found_req   = [t for t in required_tokens if t in title_lower]
+        match_ratio = len(found_req) / len(required_tokens)
+        score += match_ratio * 60
+        if match_ratio == 1.0:
             score += 20
-        if not found:
-            score -= 20
+        elif match_ratio < 0.5:
+            return -1.0
+        elif match_ratio < 0.6:
+            score -= 10
     else:
         score += 10
 
-    # Variation matching
+    # Optional generation tokens give bonus if present
+    if optional_tokens:
+        found_opt = [t for t in optional_tokens if t in title_lower]
+        score += (len(found_opt) / len(optional_tokens)) * 15
+
+    # --- Variation matching ---
     if not is_base:
         v_tokens = variation_tokens(variation)
         if v_tokens:
@@ -413,8 +490,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
         title_tokens = set(tokenize(title_lower))
         if title_tokens & STRONG_NON_BASE:
             score -= 40
-            
-    # Canonical name extra token check
         canonical = (card.get("canonical_name") or "").lower()
         set_name_lower = set_name.lower()
         canonical_extra = [
@@ -427,8 +502,13 @@ def score_card_match(parsed: dict, card: dict) -> float:
             missing = [t for t in canonical_extra if t not in title_lower]
             if missing and len(missing) / len(canonical_extra) >= 0.5:
                 return -1.0
-    # Year bonus
-    if set_year and (ebay_year == set_year or ebay_year2 == set_year):
+
+    # --- Card number penalty ---
+    if db_card_num and not ebay_card_num:
+        score -= 30
+
+    # --- Year bonus ---
+    if set_year and (preferred_year == set_year or ebay_year == set_year):
         score += 10
 
     return score
@@ -452,10 +532,8 @@ def parse_grade(title: str) -> str:
 # ===========================================================================
 
 def search_ebay(cat: dict, listing_type: str) -> list:
-    """listing_type: 'bin' or 'auction'"""
     token = get_ebay_token()
     items = []
-
     for page in range(2):
         if listing_type == "bin":
             filter_str = "buyingOptions:{FIXED_PRICE},price:[10..]"
@@ -464,37 +542,32 @@ def search_ebay(cat: dict, listing_type: str) -> list:
             ten_min    = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
             filter_str = f"buyingOptions:{{AUCTION}},itemEndDate:[..{ten_min}],price:[5..]"
             sort       = "-endingSoonest"
-
         params = {
-            "q":            cat["ebay_query"],
-            "category_ids": cat["ebay_category"],
+            "q":             cat["ebay_query"],
+            "category_ids":  cat["ebay_category"],
             "aspect_filter": cat["aspect_filter"],
-            "limit":        "100",
-            "offset":       str(page * 100),
-            "sort":         sort,
-            "filter":       filter_str,
+            "limit":         "100",
+            "offset":        str(page * 100),
+            "sort":          sort,
+            "filter":        filter_str,
         }
-
         time.sleep(0.5)
         resp = requests.get(
             EBAY_SEARCH_URL,
             headers={
-                "Authorization": f"Bearer {token}",
+                "Authorization":          f"Bearer {token}",
                 "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
             },
             params=params,
         )
-
         if not resp.ok:
             log.error(f"eBay error {resp.status_code}: {resp.text[:200]}")
             break
-
         batch = resp.json().get("itemSummaries", [])
         items.extend(batch)
         log.info(f"  Fetched {len(batch)} {listing_type} items (page {page + 1})")
         if len(batch) < 100:
             break
-
     log.info(f"  Total {listing_type}: {len(items)} items")
     return items
 
@@ -530,68 +603,51 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
     log.info(f"  --- processItems: type={listing_type} count={len(items)} ---")
 
-    # -----------------------------------------------------------------------
     # Step 1: player matching
-    # -----------------------------------------------------------------------
     title_to_player = {}
-
     for item in items:
         title = item.get("title", "")
         if not title:
             continue
-
         if parse_grade(title) != "Raw":
             continue
-
         candidates = get_candidate_players(title, sport)
         if not candidates:
             log.info(f"  NO_CANDIDATE [no_player_match]: {title}")
             continue
-
         title_to_player[title] = candidates[0]
         log.info(f"  PLAYER MATCH: \"{title}\" → {candidates[0]}")
 
     log.info(f"  Step 1: {time.time()-t0:.1f}s — matched {len(title_to_player)} items")
-
     if not title_to_player:
         return
 
-    # -----------------------------------------------------------------------
     # Step 2: fetch card data
-    # -----------------------------------------------------------------------
     t1 = time.time()
     unique_players = list(set(title_to_player.values()))
     fetch_player_cards(unique_players, sport)
     log.info(f"  Step 2: {time.time()-t1:.1f}s — fetched {len(unique_players)} players")
 
-    # -----------------------------------------------------------------------
     # Step 3: score and alert
-    # -----------------------------------------------------------------------
     t2 = time.time()
-
     for item in items:
         title          = item.get("title", "")
         matched_player = title_to_player.get(title)
         if not matched_player:
             continue
-
         cards = cache.get(matched_player, [])
         if not cards:
             continue
-
         if parse_grade(title) != "Raw":
             continue
 
         parsed = parse_title(title)
-
         if not parsed["ebay_year"] and not parsed["ebay_card_num"]:
             log.info(f"  NO_CANDIDATE [no_year_or_cardnum]: {title}")
             continue
 
-        # Score every raw card for this player
         matched_card = None
         best_score   = 0.0
-
         for card in cards:
             if card.get("grade") != "Raw":
                 continue
@@ -614,14 +670,12 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             f"(score={best_score:.0f} variation={matched_card.get('variation') or 'base'})"
         )
 
-        # Price check
         if listing_type == "bin":
             price = float((item.get("price") or {}).get("value", 0))
         else:
             price = float(
                 (item.get("currentBidPrice") or item.get("price") or {}).get("value", 0)
             )
-
         if price <= 0:
             continue
 
@@ -629,12 +683,14 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         if market_price <= 0:
             continue
         if price >= market_price * DISCOUNT_THRESHOLD:
-            log.info(f"  PRICE SKIP: {matched_card['canonical_name']} | eBay: ${price:.2f} | Market: ${market_price:.2f} | Threshold: ${market_price * DISCOUNT_THRESHOLD:.2f}")
+            log.info(
+                f"  PRICE SKIP: {matched_card['canonical_name']} | "
+                f"eBay: {fmt(price)} | Market: {fmt(market_price)}"
+            )
             continue
 
         savings_pct = round((market_price - price) / market_price * 100)
         savings_dol = market_price - price
-
         if savings_dol < MIN_SAVINGS:
             continue
         if savings_pct > MAX_SAVINGS_PCT:
@@ -647,16 +703,15 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
         log.info(
             f"  DEAL: {matched_card['canonical_name']} | "
-            f"eBay: ${price:.2f} | Market: ${market_price:.2f} | Save: {savings_pct}%"
+            f"eBay: {fmt(price)} | Market: {fmt(market_price)} | Save: {savings_pct}%"
         )
 
-        # Build Discord embed
         market_source = "30d avg" if matched_card.get("avg_price_30d") else "⚠️ last sale only"
         last_sale_raw = matched_card.get("last_sale_date")
         last_sale     = last_sale_raw[:10] if last_sale_raw else "unknown"
+        type_label    = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
+        has_30d       = bool(matched_card.get("avg_price_30d"))
 
-        type_label = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
-        has_30d    = bool(matched_card.get("avg_price_30d"))
         if listing_type == "bin":
             color = 0x3498db if has_30d else 0xf39c12
         else:
@@ -673,9 +728,9 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
                 f"{matched_card['canonical_name']} (Raw)"
             ),
             "description": (
-                f"eBay: ${price:.2f} | "
-                f"Market: ${market_price:.2f} ({market_source}) | "
-                f"Save: {savings_pct}% (${savings_dol:.2f})\n"
+                f"eBay: {fmt(price)} | "
+                f"Market: {fmt(market_price)} ({market_source}) | "
+                f"Save: {savings_pct}% ({fmt(savings_dol)})\n"
                 f"Set: {set_display or 'unknown'}\n"
                 f"Last Sale: {last_sale}"
             ),
@@ -683,10 +738,7 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             "color":     color,
             "thumbnail": {"url": (item.get("image") or {}).get("imageUrl", "")},
             "footer":    {
-                "text": (
-                    f"Match score: {best_score:.0f} | "
-                    f"Variation: {matched_card.get('variation') or 'base'}"
-                )
+                "text": f"Variation: {matched_card.get('variation') or 'base'}"
             },
         }
 
@@ -703,39 +755,29 @@ def run_scan():
     log.info("=" * 60)
     log.info(f"Starting scan — {datetime.utcnow().isoformat()}")
     log.info("=" * 60)
-
     for cat_name, cat in CATEGORIES.items():
         sport = cat["sport"]
         log.info(f"\n--- Scanning {cat_name} ---")
-
         try:
             load_player_index(sport)
-
             bin_items     = search_ebay(cat, "bin")
             auction_items = search_ebay(cat, "auction")
-
             process_items(bin_items,     "bin",     sport, cat)
             process_items(auction_items, "auction", sport, cat)
-
         except Exception as e:
             log.error(f"Error scanning {cat_name}: {e}", exc_info=True)
             continue
-
         time.sleep(2)
-
     log.info("\nScan complete.")
 
 # ===========================================================================
-# Entry point — runs once immediately then every 10 minutes
+# Entry point
 # ===========================================================================
 
 if __name__ == "__main__":
     log.info("Card price scanner starting...")
-
     run_scan()
-
     schedule.every(10).minutes.do(run_scan)
-
     while True:
         schedule.run_pending()
         time.sleep(30)
