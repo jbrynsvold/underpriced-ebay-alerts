@@ -165,6 +165,14 @@ TEAM_NAMES = {
     "Hartford Whalers", "Atlanta Thrashers",
 }
 
+# Sport labels used in embed titles for the combined OtherSports category
+OTHER_SPORTS_EMOJIS = {
+    "Soccer":    "⚽",
+    "UFC/MMA":   "🥊",
+    "Golf":      "⛳",
+    "Formula 1": "🏎️",
+}
+
 CATEGORIES = {
     "MLB": {
         "sport":         "MLB",
@@ -226,45 +234,19 @@ CATEGORIES = {
         "color":         0x6A0DAD,
         "is_tcg":        True,
     },
-    "Soccer": {
-        "sport":         "Soccer",
-        "ebay_query":    f"soccer card {EXCL_SPORTS}",
+    # Soccer, UFC/MMA, Golf, and Formula 1 combined into a single eBay search.
+    # All alerts go to one "other-sports" Discord channel.
+    # Player matching runs against each sport's index in sequence.
+    "OtherSports": {
+        "sports":        ["Soccer", "UFC/MMA", "Golf", "Formula 1"],
+        "ebay_query":    f"card {EXCL_SPORTS}",
         "ebay_category": "261328",
-        "aspect_filter": "categoryId:261328,Sport:{Soccer}",
-        "discord_env":   "DISCORD_WEBHOOK_SOCCER_ALERTS",
-        "emoji":         "⚽",
-        "color":         0x3D9B35,
+        "aspect_filter": "categoryId:261328,Sport:{Soccer|Mixed Martial Arts|Golf|Racing}",
+        "discord_env":   "DISCORD_WEBHOOK_OTHER_SPORTS_ALERTS",
+        "emoji":         "🏅",
+        "color":         0x5865F2,
         "is_tcg":        False,
-    },
-    "UFC": {
-        "sport":         "UFC/MMA",
-        "ebay_query":    f"UFC MMA card {EXCL_SPORTS}",
-        "ebay_category": "261328",
-        "aspect_filter": "categoryId:261328,Sport:{Mixed Martial Arts}",
-        "discord_env":   "DISCORD_WEBHOOK_UFC_ALERTS",
-        "emoji":         "🥊",
-        "color":         0xC0392B,
-        "is_tcg":        False,
-    },
-    "Golf": {
-        "sport":         "Golf",
-        "ebay_query":    f"golf card {EXCL_SPORTS}",
-        "ebay_category": "261328",
-        "aspect_filter": "categoryId:261328,Sport:{Golf}",
-        "discord_env":   "DISCORD_WEBHOOK_GOLF_ALERTS",
-        "emoji":         "⛳",
-        "color":         0x2E7D32,
-        "is_tcg":        False,
-    },
-    "Formula1": {
-        "sport":         "Formula 1",
-        "ebay_query":    f'"formula 1" OR "f1" card {EXCL_SPORTS}',
-        "ebay_category": "261328",
-        "aspect_filter": "categoryId:261328,Sport:{Racing}",
-        "discord_env":   "DISCORD_WEBHOOK_F1_ALERTS",
-        "emoji":         "🏎️",
-        "color":         0xE8002D,
-        "is_tcg":        False,
+        "is_multi_sport": True,
     },
 }
 
@@ -426,23 +408,25 @@ def tokenize(text: str, min_len: int = 3) -> list:
 
 def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
     """Returns (required_tokens, optional_tokens)."""
+    all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
     if is_tcg:
-        TCG_NOISE     = SET_NOISE_WORDS | {"pokemon"}
-        all_tokens    = [t for t in tokenize(set_name) if t not in TCG_NOISE]
-        year_tokens   = [t for t in all_tokens if re.match(r'^\d{4}$', t)]
-        non_year      = [t for t in all_tokens if not re.match(r'^\d{4}$', t)]
-        gen_tokens    = [t for t in non_year if t in POKEMON_GENERATION_TOKENS]
+        TCG_NOISE    = SET_NOISE_WORDS | {"pokemon"}
+        all_tokens   = [t for t in tokenize(set_name) if t not in TCG_NOISE]
+        year_tokens  = [t for t in all_tokens if re.match(r'^\d{4}$', t)]
+        non_year     = [t for t in all_tokens if not re.match(r'^\d{4}$', t)]
+        gen_tokens   = [t for t in non_year if t in POKEMON_GENERATION_TOKENS]
         unique_tokens = [t for t in non_year if t not in POKEMON_GENERATION_TOKENS]
         if unique_tokens:
+            # Sub-set — unique name is required, generation and year are optional
             required = unique_tokens
             optional = gen_tokens + year_tokens
         else:
+            # Base set — generation tokens are all we have, require them
             required = gen_tokens
             optional = year_tokens
     else:
-        all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
-        required   = all_tokens
-        optional   = []
+        required = all_tokens
+        optional = []
     return required, optional
 
 def variation_tokens(variation: str) -> list:
@@ -776,10 +760,11 @@ def post_discord(webhook_url: str, embed: dict):
         log.error(f"Discord post failed: {e}")
 
 # ===========================================================================
-# Process items
+# Process items — single sport
 # ===========================================================================
 
 def process_items(items: list, listing_type: str, sport: str, cat: dict):
+    """Process eBay items for a single-sport category."""
     if not items:
         return
 
@@ -788,7 +773,7 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
     cache   = _player_card_cache.setdefault(sport, {})
     t0      = time.time()
 
-    log.info(f"  --- processItems: type={listing_type} count={len(items)} ---")
+    log.info(f"  --- processItems: type={listing_type} sport={sport} count={len(items)} ---")
 
     # Step 1: pre-filter + player matching
     title_to_player = {}
@@ -797,9 +782,6 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         if not title:
             continue
 
-        # --- Price pre-filter on actual current price ---
-        # eBay query filter uses opening bid for auctions, which can be $0.01.
-        # This gates on the real current bid/price instead.
         if listing_type == "bin":
             raw_price = float((item.get("price") or {}).get("value", 0))
         else:
@@ -811,19 +793,13 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             log.info(f"  PRICE_FLOOR [{raw_price:.2f} < {floor}]: {title}")
             continue
 
-        # --- Graded filter ---
         if parse_grade(title) != "Raw":
             continue
-
-        # --- Soft keyword filter (catches junk that slips past eBay query) ---
         if any(kw in title.lower() for kw in EXCL_KEYWORDS):
             continue
-
-        # --- Japanese set code filter (TCG only) ---
         if is_tcg and JAPANESE_SET_CODE_RE.search(title):
             continue
 
-        # --- Require year OR card number for sports; TCG can match on name/set alone ---
         parsed = parse_title(title)
         if not is_tcg and not parsed["ebay_year"] and not parsed["ebay_card_num"]:
             log.info(f"  NO_CANDIDATE [no_year_or_cardnum]: {title}")
@@ -842,12 +818,122 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
     # Step 2: fetch card data
     t1 = time.time()
-    unique_players = list(set(title_to_player.values()))
-    fetch_player_cards(unique_players, sport)
-    log.info(f"  Step 2: {time.time()-t1:.1f}s — fetched {len(unique_players)} players")
+    fetch_player_cards(list(set(title_to_player.values())), sport)
+    log.info(f"  Step 2: {time.time()-t1:.1f}s")
 
     # Step 3: score and alert
+    t2      = time.time()
+    emoji   = cat.get("emoji", "🏅")
+    color   = cat.get("color", 0x5865F2)
+
+    _score_and_alert(items, title_to_player, cache, listing_type, sport, emoji, color, webhook)
+    log.info(f"  Step 3: {time.time()-t2:.1f}s")
+
+
+# ===========================================================================
+# Process items — multi-sport (OtherSports)
+# ===========================================================================
+
+def process_items_multi(items: list, listing_type: str, cat: dict):
+    """
+    Process eBay items for the combined OtherSports category.
+    Runs each sport's player index against the same item list,
+    takes the first match found across all sports.
+    """
+    if not items:
+        return
+
+    sports  = cat["sports"]
+    webhook = os.getenv(cat["discord_env"], "")
+    t0      = time.time()
+
+    log.info(f"  --- processItems (multi): type={listing_type} sports={sports} count={len(items)} ---")
+
+    # Pre-filter once — same rules, sport-agnostic
+    filtered = []
+    for item in items:
+        title = item.get("title", "")
+        if not title:
+            continue
+        if listing_type == "bin":
+            raw_price = float((item.get("price") or {}).get("value", 0))
+        else:
+            raw_price = float(
+                (item.get("currentBidPrice") or item.get("price") or {}).get("value", 0)
+            )
+        floor = MIN_PRICE_BIN if listing_type == "bin" else MIN_PRICE_AUCTION
+        if raw_price < floor:
+            continue
+        if parse_grade(title) != "Raw":
+            continue
+        if any(kw in title.lower() for kw in EXCL_KEYWORDS):
+            continue
+        parsed = parse_title(title)
+        if not parsed["ebay_year"] and not parsed["ebay_card_num"]:
+            continue
+        filtered.append(item)
+
+    log.info(f"  Pre-filter: {len(filtered)}/{len(items)} items passed")
+    if not filtered:
+        return
+
+    # Try each sport's player index against the filtered items
+    # title_to_match: title → (player_name, sport)
+    title_to_match: dict = {}
+    for sport in sports:
+        load_player_index(sport)
+        for item in filtered:
+            title = item.get("title", "")
+            if title in title_to_match:
+                continue  # already matched by a prior sport
+            candidates = get_candidate_players(title, sport)
+            if candidates:
+                title_to_match[title] = (candidates[0], sport)
+                log.info(f"  PLAYER MATCH [{sport}]: \"{title}\" → {candidates[0]}")
+
+    log.info(f"  Step 1: {time.time()-t0:.1f}s — matched {len(title_to_match)} items")
+    if not title_to_match:
+        return
+
+    # Fetch card data per sport
+    t1 = time.time()
+    by_sport: dict = {}
+    for title, (player, sport) in title_to_match.items():
+        by_sport.setdefault(sport, set()).add(player)
+    for sport, players in by_sport.items():
+        fetch_player_cards(list(players), sport)
+    log.info(f"  Step 2: {time.time()-t1:.1f}s")
+
+    # Score and alert — use matched card's sport for emoji
     t2 = time.time()
+    for item in filtered:
+        title = item.get("title", "")
+        match = title_to_match.get(title)
+        if not match:
+            continue
+        matched_player, sport = match
+        cache = _player_card_cache.setdefault(sport, {})
+        cards = cache.get(matched_player, [])
+        if not cards:
+            continue
+
+        emoji = OTHER_SPORTS_EMOJIS.get(sport, "🏅")
+        _score_and_alert(
+            [item], {title: matched_player}, cache,
+            listing_type, sport, emoji, cat["color"], webhook
+        )
+
+    log.info(f"  Step 3: {time.time()-t2:.1f}s")
+
+
+# ===========================================================================
+# Shared score + alert logic
+# ===========================================================================
+
+def _score_and_alert(
+    items: list, title_to_player: dict, cache: dict,
+    listing_type: str, sport: str, emoji: str, color: int, webhook: str
+):
     for item in items:
         title          = item.get("title", "")
         matched_player = title_to_player.get(title)
@@ -931,10 +1017,10 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         end_time_raw = item.get("itemEndDate", "")
         end_time_str = fmt_end_time(end_time_raw) if end_time_raw else None
 
-        if listing_type == "bin":
-            color = 0x3498db if has_30d else 0xf39c12
-        else:
-            color = 0x2ecc71 if has_30d else 0xf1c40f
+        embed_color = 0x3498db if (listing_type == "bin" and has_30d) \
+               else  0xf39c12 if (listing_type == "bin") \
+               else  0x2ecc71 if has_30d \
+               else  0xf1c40f
 
         set_display = " ".join(filter(None, [
             str(matched_card.get("set_year") or ""),
@@ -952,19 +1038,18 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
         embed = {
             "title": (
-                f"🚨 {type_label} – {cat['emoji']} {sport}: "
+                f"🚨 {type_label} – {emoji} {sport}: "
                 f"{matched_card['canonical_name']} (Raw)"
             ),
             "description": "\n".join(desc_lines),
-            "url":       url,
-            "color":     color,
-            "thumbnail": {"url": (item.get("image") or {}).get("imageUrl", "")},
+            "url":         url,
+            "color":       embed_color,
+            "thumbnail":   {"url": (item.get("image") or {}).get("imageUrl", "")},
         }
 
         post_discord(webhook, embed)
         time.sleep(0.3)
 
-    log.info(f"  Step 3: {time.time()-t2:.1f}s")
 
 # ===========================================================================
 # Main scan
@@ -975,14 +1060,23 @@ def run_scan():
     log.info(f"Starting scan — {datetime.utcnow().isoformat()}")
     log.info("=" * 60)
     for cat_name, cat in CATEGORIES.items():
-        sport = cat["sport"]
         log.info(f"\n--- Scanning {cat_name} ---")
         try:
-            load_player_index(sport)
-            bin_items     = search_ebay(cat, "bin")
-            auction_items = search_ebay(cat, "auction")
-            process_items(bin_items,     "bin",     sport, cat)
-            process_items(auction_items, "auction", sport, cat)
+            if cat.get("is_multi_sport"):
+                # Load all sport indexes upfront then run combined search
+                for sport in cat["sports"]:
+                    load_player_index(sport)
+                bin_items     = search_ebay(cat, "bin")
+                auction_items = search_ebay(cat, "auction")
+                process_items_multi(bin_items,     "bin",     cat)
+                process_items_multi(auction_items, "auction", cat)
+            else:
+                sport = cat["sport"]
+                load_player_index(sport)
+                bin_items     = search_ebay(cat, "bin")
+                auction_items = search_ebay(cat, "auction")
+                process_items(bin_items,     "bin",     sport, cat)
+                process_items(auction_items, "auction", sport, cat)
         except Exception as e:
             log.error(f"Error scanning {cat_name}: {e}", exc_info=True)
             continue
