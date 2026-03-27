@@ -46,6 +46,15 @@ STRONG_NON_BASE = {
     "reverse", "fullart", "altart", "promo", "kaboom", "horizontal",
 }
 
+# Colors that must match exactly between DB variation and eBay title.
+# If the DB card has one of these and the title has a *different* one, hard reject.
+VARIATION_COLORS = {
+    "black", "white", "red", "blue", "green", "yellow", "orange", "purple",
+    "pink", "brown", "grey", "gray", "gold", "silver", "bronze",
+    "aqua", "teal", "cyan", "magenta", "indigo", "violet", "maroon",
+    "platinum", "copper", "ruby", "sapphire", "emerald", "onyx",
+}
+
 # Pokemon generation prefixes — optional in matching, don't penalize if missing
 POKEMON_GENERATION_TOKENS = {
     "scarlet", "violet", "sword", "shield", "sun", "moon",
@@ -177,6 +186,15 @@ _player_index_loaded: set = set()
 def fmt(n: float) -> str:
     return f"${n:,.2f}"
 
+def fmt_end_time(iso_str: str) -> str:
+    """Convert eBay itemEndDate ISO string to a readable local-ish format."""
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        # Show as UTC time — e.g. "3:42 PM UTC"
+        return dt.strftime("%-I:%M %p UTC")
+    except Exception:
+        return iso_str
+
 # ===========================================================================
 # Title normalization
 # ===========================================================================
@@ -212,7 +230,7 @@ TITLE_EXPANSIONS = [
     # Sports — Bowman
     (r'\bBCP\b',                        'bowman chrome prospects'),
     (r'\bBDP\b',                        'bowman draft picks'),
-    (r'\bBC\b(?=\s+(?:Pros|Draft|Prospect))', 'bowman chrome'),
+    (r'\bBC\b(?=\s+(?=Pros|Draft|Prospect))', 'bowman chrome'),
     # Sports — Topps
     (r'\bA&G\b',                        'allen ginter'),
     (r'\bSP\s+Auth\b',                 'sp authentic'),
@@ -473,6 +491,18 @@ def score_card_match(parsed: dict, card: dict) -> float:
     # --- Variation matching ---
     if not is_base:
         v_tokens = variation_tokens(variation)
+
+        # --- Color hard filter ---
+        # If the DB variation contains a color word, the title must contain that
+        # same color. If the title has a *different* color, hard reject.
+        db_colors    = VARIATION_COLORS & set(v_tokens)
+        title_colors = VARIATION_COLORS & set(tokenize(title_lower))
+        if db_colors:
+            if not (db_colors & title_colors):
+                return -1.0
+            if title_colors - db_colors:
+                return -1.0
+
         if v_tokens:
             found_v = [t for t in v_tokens if t in title_lower]
             ratio_v = len(found_v) / len(v_tokens)
@@ -550,6 +580,7 @@ def search_ebay(cat: dict, listing_type: str) -> list:
             "offset":        str(page * 100),
             "sort":          sort,
             "filter":        filter_str,
+            "fieldgroups":   "EXTENDED",
         }
         time.sleep(0.5)
         resp = requests.get(
@@ -711,6 +742,11 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         last_sale     = last_sale_raw[:10] if last_sale_raw else "unknown"
         type_label    = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
         has_30d       = bool(matched_card.get("avg_price_30d"))
+        variation_label = matched_card.get("variation") or "Base"
+
+        # Auction end time
+        end_time_raw = item.get("itemEndDate", "")
+        end_time_str = fmt_end_time(end_time_raw) if end_time_raw else None
 
         if listing_type == "bin":
             color = 0x3498db if has_30d else 0xf39c12
@@ -722,24 +758,24 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             matched_card.get("set_name") or "",
         ])).strip()
 
+        desc_lines = [
+            f"eBay: {fmt(price)} | Market: {fmt(market_price)} ({market_source}) | Save: {savings_pct}% ({fmt(savings_dol)})",
+            f"Set: {set_display or 'unknown'}",
+            f"Variation: {variation_label}",
+            f"Last Sale: {last_sale}",
+        ]
+        if listing_type == "auction" and end_time_str:
+            desc_lines.append(f"⏰ Ends: {end_time_str}")
+
         embed = {
             "title": (
                 f"🚨 {type_label} – {cat['emoji']} {sport}: "
                 f"{matched_card['canonical_name']} (Raw)"
             ),
-            "description": (
-                f"eBay: {fmt(price)} | "
-                f"Market: {fmt(market_price)} ({market_source}) | "
-                f"Save: {savings_pct}% ({fmt(savings_dol)})\n"
-                f"Set: {set_display or 'unknown'}\n"
-                f"Last Sale: {last_sale}"
-            ),
+            "description": "\n".join(desc_lines),
             "url":       url,
             "color":     color,
             "thumbnail": {"url": (item.get("image") or {}).get("imageUrl", "")},
-            "footer":    {
-                "text": f"Variation: {matched_card.get('variation') or 'base'}"
-            },
         }
 
         post_discord(webhook, embed)
