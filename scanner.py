@@ -31,6 +31,11 @@ MAX_SAVINGS_PCT    = 90
 MIN_MATCH_SCORE    = 65
 MIN_WORD_LEN       = 4
 
+# Minimum actual current price — applied in-process on real bid/listing price,
+# not just the eBay query filter (which uses opening bid for auctions).
+MIN_PRICE_BIN     = 10.00
+MIN_PRICE_AUCTION =  5.00
+
 BASE_VARIATIONS = {"", "base", "none", "base card", "n/a"}
 
 SET_NOISE_WORDS = {
@@ -62,11 +67,53 @@ POKEMON_GENERATION_TOKENS = {
     "winds", "waves",
 }
 
-EXCL = (
+# Soft keyword filter applied in-process (supplements eBay query exclusions)
+EXCL_KEYWORDS = [
+    "you pick", "lot of", "choose your", "complete your set", "u pick",
+    "card lot", "pack of", "box of", "blaster", "hobby box",
+    "factory sealed", "sealed box", "sealed pack", "complete set",
+    "mystery", "random", "bundle", "collection", "bulk",
+    "pick a card", "pick your card", "you choose", "choose from",
+    "art card", "fan art", "custom card", "custom slab",
+    "uncut", "panels",
+    "tcg pocket", "pocket",
+    "japanese", "chinese", "korean",
+]
+
+# Japanese set codes that slip through the language filter
+JAPANESE_SET_CODE_RE = re.compile(
+    r'\b(sv\d+[a-zA-Z]*|SV-P|SV[0-9]+[a-zA-Z]|s\d+[a-zA-Z]|SM\d+|XY\d+|BW\d+)\b'
+)
+
+EXCL_SPORTS = (
     '-"you pick" -"lot of" -"choose your" -"complete your set" -"u pick"'
     ' -"set lot" -"select a card" -"pick a card" -"pick your card"'
     ' -autograph -auto -signed -"art card" -"custom card"'
 )
+
+EXCL_TCG = (
+    '-"you pick" -"lot of" -"choose your" -"complete your set" -"u pick"'
+    ' -"card lot" -"pack of" -"box of" -"blaster" -"hobby box"'
+    ' -"factory sealed" -"sealed box" -"sealed pack" -"complete set"'
+    ' -"mystery" -"random" -"bundle" -"bulk"'
+    ' -"pick a card" -"pick your card" -"you choose" -"choose from"'
+    ' -"art card" -"fan art" -"custom card" -"custom slab"'
+    ' -"uncut" -"panels" -"tcg pocket" -"pocket"'
+    ' -"japanese" -"chinese" -"korean"'
+    ' -PSA -BGS -SGC -CGC -graded -autograph -auto'
+)
+
+# City/partial team name fragments that pollute the player index
+CITY_FRAGMENTS = {
+    "Los Angeles", "New York", "San Francisco", "Washington Senators",
+    "Washington", "Chicago", "Boston", "Oakland", "Detroit",
+    "Cleveland", "Seattle", "Minnesota", "Houston", "Atlanta",
+    "Philadelphia", "Cincinnati", "Milwaukee", "Pittsburgh",
+    "San Diego", "Colorado", "Arizona", "Miami", "Tampa Bay",
+    "Kansas City", "St. Louis", "Toronto", "Baltimore",
+    "Golden State", "New Orleans", "Oklahoma City", "Salt Lake",
+    "Las Vegas", "Sacramento", "Memphis", "Portland",
+}
 
 TEAM_NAMES = {
     # MLB
@@ -111,39 +158,63 @@ TEAM_NAMES = {
 CATEGORIES = {
     "MLB": {
         "sport":         "MLB",
-        "ebay_query":    f"baseball card {EXCL}",
+        "ebay_query":    f"baseball card {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Baseball}",
         "discord_env":   "DISCORD_WEBHOOK_MLB_ALERTS",
         "emoji":         "⚾",
         "color":         0x002D72,
+        "is_tcg":        False,
     },
     "NBA": {
         "sport":         "NBA",
-        "ebay_query":    f"basketball card {EXCL}",
+        "ebay_query":    f"basketball card {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Basketball}",
         "discord_env":   "DISCORD_WEBHOOK_NBA_ALERTS",
         "emoji":         "🏀",
         "color":         0xC9082A,
+        "is_tcg":        False,
     },
     "NFL": {
         "sport":         "NFL",
-        "ebay_query":    f"football card {EXCL}",
+        "ebay_query":    f"football card {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Football}",
         "discord_env":   "DISCORD_WEBHOOK_NFL_ALERTS",
         "emoji":         "🏈",
         "color":         0x013369,
+        "is_tcg":        False,
     },
     "NHL": {
         "sport":         "NHL",
-        "ebay_query":    f"hockey card {EXCL}",
+        "ebay_query":    f"hockey card {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Ice Hockey}",
         "discord_env":   "DISCORD_WEBHOOK_NHL_ALERTS",
         "emoji":         "🏒",
         "color":         0x000000,
+        "is_tcg":        False,
+    },
+    "Pokemon": {
+        "sport":         "Pokemon",
+        "ebay_query":    f'pokemon card -"magic the gathering" -MTG -yugioh -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
+        "ebay_category": "183454",
+        "aspect_filter": "categoryId:183454,Graded:{No}",
+        "discord_env":   "DISCORD_WEBHOOK_POKEMON_ALERTS",
+        "emoji":         "⚡",
+        "color":         0xFFCC00,
+        "is_tcg":        True,
+    },
+    "Yu-Gi-Oh": {
+        "sport":         "Yu-Gi-Oh",
+        "ebay_query":    f'yugioh card -pokemon -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
+        "ebay_category": "183454",
+        "aspect_filter": "categoryId:183454,Graded:{No}",
+        "discord_env":   "DISCORD_WEBHOOK_YUGIOH_ALERTS",
+        "emoji":         "🃏",
+        "color":         0x6A0DAD,
+        "is_tcg":        True,
     },
 }
 
@@ -187,13 +258,26 @@ def fmt(n: float) -> str:
     return f"${n:,.2f}"
 
 def fmt_end_time(iso_str: str) -> str:
-    """Convert eBay itemEndDate ISO string to a readable local-ish format."""
+    """Convert eBay itemEndDate ISO string to readable UTC time."""
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        # Show as UTC time — e.g. "3:42 PM UTC"
         return dt.strftime("%-I:%M %p UTC")
     except Exception:
         return iso_str
+
+def get_item_url(item: dict) -> str:
+    """
+    Build a stable direct eBay item URL from itemId.
+    itemWebUrl redirects to evergreen/similar listings once an auction ends.
+    The /itm/{numeric_id} format is stable and always points to the actual listing.
+    """
+    item_id = item.get("itemId", "")
+    if item_id:
+        # Browse API itemId is often prefixed like "v1|123456789|0" — extract numeric part
+        numeric = re.search(r'\d{8,}', item_id)
+        if numeric:
+            return f"https://www.ebay.com/itm/{numeric.group()}"
+    return item.get("itemWebUrl", "")
 
 # ===========================================================================
 # Title normalization
@@ -220,7 +304,7 @@ TITLE_EXPANSIONS = [
     (r'\bHeartGold\s*&?\s*SoulSilver\b','heartgold soulsilver'),
     (r'\bEvo\s+Skies\b',               'evolving skies'),
     (r'\bPrismatic\s+Evo\b',           'prismatic evolutions'),
-    # Pokemon — upcoming Winds & Waves generation
+    # Pokemon — Winds & Waves generation
     (r'\bW&W\b',                        'winds waves'),
     (r'\bWinds\s*&\s*Waves\b',          'winds waves'),
     (r'\bWW\b(?=\s+\d)',               'winds waves '),
@@ -230,7 +314,7 @@ TITLE_EXPANSIONS = [
     # Sports — Bowman
     (r'\bBCP\b',                        'bowman chrome prospects'),
     (r'\bBDP\b',                        'bowman draft picks'),
-    (r'\bBC\b(?=\s+(?=Pros|Draft|Prospect))', 'bowman chrome'),
+    (r'\bBC\b(?=\s+(?:Pros|Draft|Prospect))', 'bowman chrome'),
     # Sports — Topps
     (r'\bA&G\b',                        'allen ginter'),
     (r'\bSP\s+Auth\b',                 'sp authentic'),
@@ -318,7 +402,7 @@ def load_player_index(sport: str):
         if name in seen:
             continue
         seen.add(name)
-        cleaned = strip_suffix(name).lower()
+        cleaned = strip_suffix(name).strip().lower()
         cleaned_map[cleaned] = name
         for word in cleaned.split():
             if len(word) >= MIN_WORD_LEN:
@@ -331,7 +415,7 @@ def load_player_index(sport: str):
 def get_candidate_players(title: str, sport: str) -> list:
     title_lower = normalize_title(title).lower()
     word_map    = _word_to_players.get(sport, {})
-    title_words   = [w for w in re.split(r'\W+', title_lower) if len(w) >= MIN_WORD_LEN]
+    title_words = [w for w in re.split(r'\W+', title_lower) if len(w) >= MIN_WORD_LEN]
     candidate_set = set()
     for word in title_words:
         for player in word_map.get(word, []):
@@ -342,7 +426,9 @@ def get_candidate_players(title: str, sport: str) -> list:
     for original_name in candidate_set:
         if original_name in TEAM_NAMES:
             continue
-        cleaned = strip_suffix(original_name).lower()
+        if original_name in CITY_FRAGMENTS:
+            continue
+        cleaned = strip_suffix(original_name).strip().lower()
         score   = fuzz.partial_ratio(cleaned, title_lower)
         if score >= 92:
             matches.append((original_name, score))
@@ -453,9 +539,9 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if title_is_xfractor and not db_is_xfractor:
         return -1.0
 
-    # --- Year hard filter — prefer later year for hyphenated ranges ---
+    # --- Year hard filter (sports only — TCG titles often omit year) ---
     preferred_year = ebay_year2 if ebay_year2 else ebay_year
-    if set_year and (ebay_year or ebay_year2):
+    if not is_tcg and set_year and (ebay_year or ebay_year2):
         if preferred_year != set_year and ebay_year != set_year:
             return -1.0
 
@@ -493,8 +579,8 @@ def score_card_match(parsed: dict, card: dict) -> float:
         v_tokens = variation_tokens(variation)
 
         # --- Color hard filter ---
-        # If the DB variation contains a color word, the title must contain that
-        # same color. If the title has a *different* color, hard reject.
+        # If the DB variation contains a color, the title must have that same color.
+        # If the title has a *different* color, hard reject.
         db_colors    = VARIATION_COLORS & set(v_tokens)
         title_colors = VARIATION_COLORS & set(tokenize(title_lower))
         if db_colors:
@@ -537,7 +623,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if db_card_num and not ebay_card_num:
         score -= 30
 
-    # --- Year bonus ---
+    # --- Year bonus (TCG: optional bonus only, not a hard filter) ---
     if set_year and (preferred_year == set_year or ebay_year == set_year):
         score += 10
 
@@ -566,27 +652,28 @@ def search_ebay(cat: dict, listing_type: str) -> list:
     items = []
     for page in range(2):
         if listing_type == "bin":
-            filter_str = "buyingOptions:{FIXED_PRICE},price:[10..]"
+            filter_str = f"buyingOptions:{{FIXED_PRICE}},price:[{int(MIN_PRICE_BIN)}..]"
             sort       = "-newlyListed"
         else:
             ten_min    = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            filter_str = f"buyingOptions:{{AUCTION}},itemEndDate:[..{ten_min}],price:[5..]"
+            filter_str = f"buyingOptions:{{AUCTION}},itemEndDate:[..{ten_min}],price:[{int(MIN_PRICE_AUCTION)}..]"
             sort       = "-endingSoonest"
         params = {
             "q":             cat["ebay_query"],
             "category_ids":  cat["ebay_category"],
-            "aspect_filter": cat["aspect_filter"],
             "limit":         "100",
             "offset":        str(page * 100),
             "sort":          sort,
             "filter":        filter_str,
             "fieldgroups":   "EXTENDED",
         }
+        if cat.get("aspect_filter"):
+            params["aspect_filter"] = cat["aspect_filter"]
         time.sleep(0.5)
         resp = requests.get(
             EBAY_SEARCH_URL,
             headers={
-                "Authorization":          f"Bearer {token}",
+                "Authorization":           f"Bearer {token}",
                 "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
             },
             params=params,
@@ -628,20 +715,52 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
     if not items:
         return
 
+    is_tcg  = cat.get("is_tcg", False)
     webhook = os.getenv(cat["discord_env"], "")
     cache   = _player_card_cache.setdefault(sport, {})
     t0      = time.time()
 
     log.info(f"  --- processItems: type={listing_type} count={len(items)} ---")
 
-    # Step 1: player matching
+    # Step 1: pre-filter + player matching
     title_to_player = {}
     for item in items:
         title = item.get("title", "")
         if not title:
             continue
+
+        # --- Price pre-filter on actual current price ---
+        # eBay query filter uses opening bid for auctions, which can be $0.01.
+        # This gates on the real current bid/price instead.
+        if listing_type == "bin":
+            raw_price = float((item.get("price") or {}).get("value", 0))
+        else:
+            raw_price = float(
+                (item.get("currentBidPrice") or item.get("price") or {}).get("value", 0)
+            )
+        floor = MIN_PRICE_BIN if listing_type == "bin" else MIN_PRICE_AUCTION
+        if raw_price < floor:
+            log.info(f"  PRICE_FLOOR [{raw_price:.2f} < {floor}]: {title}")
+            continue
+
+        # --- Graded filter ---
         if parse_grade(title) != "Raw":
             continue
+
+        # --- Soft keyword filter (catches junk that slips past eBay query) ---
+        if any(kw in title.lower() for kw in EXCL_KEYWORDS):
+            continue
+
+        # --- Japanese set code filter (TCG only) ---
+        if is_tcg and JAPANESE_SET_CODE_RE.search(title):
+            continue
+
+        # --- Require year OR card number for sports; TCG can match on name/set alone ---
+        parsed = parse_title(title)
+        if not is_tcg and not parsed["ebay_year"] and not parsed["ebay_card_num"]:
+            log.info(f"  NO_CANDIDATE [no_year_or_cardnum]: {title}")
+            continue
+
         candidates = get_candidate_players(title, sport)
         if not candidates:
             log.info(f"  NO_CANDIDATE [no_player_match]: {title}")
@@ -673,9 +792,6 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             continue
 
         parsed = parse_title(title)
-        if not parsed["ebay_year"] and not parsed["ebay_card_num"]:
-            log.info(f"  NO_CANDIDATE [no_year_or_cardnum]: {title}")
-            continue
 
         matched_card = None
         best_score   = 0.0
@@ -727,7 +843,7 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         if savings_pct > MAX_SAVINGS_PCT:
             continue
 
-        url = item.get("itemWebUrl", "")
+        url = get_item_url(item)
         if url in seen_urls:
             continue
         seen_urls.add(url)
@@ -737,14 +853,13 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
             f"eBay: {fmt(price)} | Market: {fmt(market_price)} | Save: {savings_pct}%"
         )
 
-        market_source = "30d avg" if matched_card.get("avg_price_30d") else "⚠️ last sale only"
-        last_sale_raw = matched_card.get("last_sale_date")
-        last_sale     = last_sale_raw[:10] if last_sale_raw else "unknown"
-        type_label    = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
-        has_30d       = bool(matched_card.get("avg_price_30d"))
+        market_source   = "30d avg" if matched_card.get("avg_price_30d") else "⚠️ last sale only"
+        last_sale_raw   = matched_card.get("last_sale_date")
+        last_sale       = last_sale_raw[:10] if last_sale_raw else "unknown"
+        type_label      = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
+        has_30d         = bool(matched_card.get("avg_price_30d"))
         variation_label = matched_card.get("variation") or "Base"
 
-        # Auction end time
         end_time_raw = item.get("itemEndDate", "")
         end_time_str = fmt_end_time(end_time_raw) if end_time_raw else None
 
