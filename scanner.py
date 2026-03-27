@@ -110,6 +110,7 @@ EXCL_TCG = (
     ' -"pick your player" -"pick & choose" -"pick from list"'
     ' -"fill your set" -"complete a set" -"complete the set"'
     ' -"take your pick" -"set break"'
+    ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set"'
 )
 
 # City/partial team name fragments that pollute the player index
@@ -225,6 +226,46 @@ CATEGORIES = {
         "color":         0x6A0DAD,
         "is_tcg":        True,
     },
+    "Soccer": {
+        "sport":         "Soccer",
+        "ebay_query":    f"soccer card {EXCL_SPORTS}",
+        "ebay_category": "261328",
+        "aspect_filter": "categoryId:261328,Sport:{Soccer}",
+        "discord_env":   "DISCORD_WEBHOOK_SOCCER_ALERTS",
+        "emoji":         "⚽",
+        "color":         0x3D9B35,
+        "is_tcg":        False,
+    },
+    "UFC": {
+        "sport":         "UFC/MMA",
+        "ebay_query":    f"UFC MMA card {EXCL_SPORTS}",
+        "ebay_category": "261328",
+        "aspect_filter": "categoryId:261328,Sport:{Mixed Martial Arts}",
+        "discord_env":   "DISCORD_WEBHOOK_UFC_ALERTS",
+        "emoji":         "🥊",
+        "color":         0xC0392B,
+        "is_tcg":        False,
+    },
+    "Golf": {
+        "sport":         "Golf",
+        "ebay_query":    f"golf card {EXCL_SPORTS}",
+        "ebay_category": "261328",
+        "aspect_filter": "categoryId:261328,Sport:{Golf}",
+        "discord_env":   "DISCORD_WEBHOOK_GOLF_ALERTS",
+        "emoji":         "⛳",
+        "color":         0x2E7D32,
+        "is_tcg":        False,
+    },
+    "Formula1": {
+        "sport":         "Formula 1",
+        "ebay_query":    f'"formula 1" OR "f1" card {EXCL_SPORTS}',
+        "ebay_category": "261328",
+        "aspect_filter": "categoryId:261328,Sport:{Racing}",
+        "discord_env":   "DISCORD_WEBHOOK_F1_ALERTS",
+        "emoji":         "🏎️",
+        "color":         0xE8002D,
+        "is_tcg":        False,
+    },
 }
 
 # ===========================================================================
@@ -267,10 +308,19 @@ def fmt(n: float) -> str:
     return f"${n:,.2f}"
 
 def fmt_end_time(iso_str: str) -> str:
-    """Convert eBay itemEndDate ISO string to readable UTC time."""
+    """Convert eBay itemEndDate ISO string to Central time (CDT/CST)."""
     try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        return dt.strftime("%-I:%M %p UTC")
+        dt      = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        now_utc = datetime.now(timezone.utc)
+        year    = now_utc.year
+        # DST: second Sunday in March → first Sunday in November
+        dst_start = datetime(year, 3,  8, 2, tzinfo=timezone.utc) + timedelta(days=(6 - datetime(year, 3,  8).weekday()) % 7)
+        dst_end   = datetime(year, 11, 1, 2, tzinfo=timezone.utc) + timedelta(days=(6 - datetime(year, 11, 1).weekday()) % 7)
+        is_cdt    = dst_start <= now_utc < dst_end
+        offset    = timedelta(hours=-5 if is_cdt else -6)
+        dt_ct     = dt.astimezone(timezone(offset))
+        suffix    = "CDT" if is_cdt else "CST"
+        return dt_ct.strftime("%-I:%M %p " + suffix)
     except Exception:
         return iso_str
 
@@ -282,7 +332,6 @@ def get_item_url(item: dict) -> str:
     """
     item_id = item.get("itemId", "")
     if item_id:
-        # Browse API itemId is often prefixed like "v1|123456789|0" — extract numeric part
         numeric = re.search(r'\d{8,}', item_id)
         if numeric:
             return f"https://www.ebay.com/itm/{numeric.group()}"
