@@ -426,25 +426,23 @@ def tokenize(text: str, min_len: int = 3) -> list:
 
 def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
     """Returns (required_tokens, optional_tokens)."""
-    all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
     if is_tcg:
-        TCG_NOISE    = SET_NOISE_WORDS | {"pokemon"}
-        all_tokens   = [t for t in tokenize(set_name) if t not in TCG_NOISE]
-        year_tokens  = [t for t in all_tokens if re.match(r'^\d{4}$', t)]
-        non_year     = [t for t in all_tokens if not re.match(r'^\d{4}$', t)]
-        gen_tokens   = [t for t in non_year if t in POKEMON_GENERATION_TOKENS]
+        TCG_NOISE     = SET_NOISE_WORDS | {"pokemon"}
+        all_tokens    = [t for t in tokenize(set_name) if t not in TCG_NOISE]
+        year_tokens   = [t for t in all_tokens if re.match(r'^\d{4}$', t)]
+        non_year      = [t for t in all_tokens if not re.match(r'^\d{4}$', t)]
+        gen_tokens    = [t for t in non_year if t in POKEMON_GENERATION_TOKENS]
         unique_tokens = [t for t in non_year if t not in POKEMON_GENERATION_TOKENS]
         if unique_tokens:
-            # Sub-set — unique name is required, generation and year are optional
             required = unique_tokens
             optional = gen_tokens + year_tokens
         else:
-            # Base set — generation tokens are all we have, require them
             required = gen_tokens
             optional = year_tokens
     else:
-        required = all_tokens
-        optional = []
+        all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
+        required   = all_tokens
+        optional   = []
     return required, optional
 
 def variation_tokens(variation: str) -> list:
