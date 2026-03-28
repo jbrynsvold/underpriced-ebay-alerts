@@ -708,9 +708,10 @@ def score_card_match(parsed: dict, card: dict) -> float:
             if missing and len(missing) / len(canonical_extra) >= 0.5:
                 return -1.0
 
-    # --- Card number penalty ---
-    if db_card_num and not ebay_card_num:
-        score -= 30
+    # Hard reject already handles conflicting numbers above.
+    # Bonus when both present and match (replaces old -30 penalty for missing number).
+    if db_card_num and ebay_card_num and db_card_num == ebay_card_num:
+        score += 15
 
     # --- Year bonus (TCG: optional bonus only, not a hard filter) ---
     if set_year and (preferred_year == set_year or ebay_year == set_year):
