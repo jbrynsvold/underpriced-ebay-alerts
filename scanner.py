@@ -121,6 +121,11 @@ EXCL_TCG = (
     ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set"'
 )
 
+REQUIRED_SET_TOKENS = {
+    "sapphire", "inception", "heritage", "luminance",
+    "flawless", "sterling",
+}
+
 # City/partial team name fragments that pollute the player index
 CITY_FRAGMENTS = {
     "Los Angeles", "New York", "San Francisco", "Washington Senators",
@@ -633,6 +638,10 @@ def score_card_match(parsed: dict, card: dict) -> float:
     # --- Set name matching ---
     set_name_normalized = normalize_title(set_name)
     required_tokens, optional_tokens = set_tokens(set_name_normalized, is_tcg=is_tcg)
+    required_set_distinguishers = REQUIRED_SET_TOKENS & set(required_tokens)
+    if required_set_distinguishers:
+        if not all(t in title_lower for t in required_set_distinguishers):
+            return -1.0
 
     if required_tokens:
         found_req   = [t for t in required_tokens if t in title_lower]
