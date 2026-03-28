@@ -280,8 +280,6 @@ supabase: Client = create_client(
     options=ClientOptions(postgrest_client_timeout=30)
 )
 
-seen_urls: set = set()
-
 _ebay_token        = None
 _ebay_token_expiry = 0
 
@@ -326,6 +324,23 @@ def get_item_url(item: dict) -> str:
         if numeric:
             return f"https://www.ebay.com/itm/{numeric.group()}"
     return item.get("itemWebUrl", "")
+
+def has_alerted(url: str) -> bool:
+    item_id = re.search(r'/itm/(\d+)', url)
+    item_id = item_id.group(1) if item_id else url
+    result = supabase.table("alert_log") \
+        .select("item_url") \
+        .eq("item_url", item_id) \
+        .gte("alerted_at", (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()) \
+        .execute()
+    return bool(result.data)
+
+def record_alert(url: str):
+    item_id = re.search(r'/itm/(\d+)', url)
+    item_id = item_id.group(1) if item_id else url
+    supabase.table("alert_log") \
+        .upsert({"item_url": item_id, "scanner": "underpriced", "alerted_at": datetime.now(timezone.utc).isoformat()}) \
+        .execute()
 
 # ===========================================================================
 # Title normalization
