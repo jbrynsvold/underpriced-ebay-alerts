@@ -564,7 +564,7 @@ def parse_title(title: str) -> dict:
     full_year = re.search(r'\b(19|20)\d{2}\b', normalized)
     if full_year:
         ebay_year = int(full_year.group())
-        hockey_year = re.search(r'\b(19|20)(\d{2})-(\d{2})\b', normalized)
+        hockey_year = re.search(r'\b(19|20)(\d{2})[-/](\d{2})\b', normalized)
         if hockey_year:
             suffix = int(hockey_year.group(3))
             ebay_year2 = 2000 + suffix if suffix <= 30 else 1900 + suffix
@@ -1094,6 +1094,8 @@ def _score_and_alert(
 # ===========================================================================
 
 def run_scan():
+    global seen_urls
+    seen_urls = set() 
     log.info("=" * 60)
     log.info(f"Starting scan — {datetime.utcnow().isoformat()}")
     log.info("=" * 60)
