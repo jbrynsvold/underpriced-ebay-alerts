@@ -1036,9 +1036,9 @@ def _score_and_alert(
             continue
 
         url = get_item_url(item)
-        if url in seen_urls:
+        if has_alerted(url):
             continue
-        seen_urls.add(url)
+        record_alert(url)
 
         log.info(
             f"  DEAL: {matched_card['canonical_name']} | "
