@@ -592,7 +592,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
         return -1.0
 
     # --- Year hard filter (sports only — TCG titles often omit year) ---
-    preferred_year = ebay_year2 if ebay_year2 else ebay_year
+    preferred_year = ebay_year
     if not is_tcg and set_year and (ebay_year or ebay_year2):
         if preferred_year != set_year and ebay_year != set_year:
             return -1.0
