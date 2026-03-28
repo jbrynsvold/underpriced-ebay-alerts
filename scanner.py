@@ -123,7 +123,7 @@ EXCL_TCG = (
 
 REQUIRED_SET_TOKENS = {
     "sapphire", "inception", "heritage", "luminance",
-    "flawless", "sterling",
+    "flawless", "sterling", "zenith", "stellar",
 }
 
 # City/partial team name fragments that pollute the player index
