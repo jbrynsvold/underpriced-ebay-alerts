@@ -60,6 +60,14 @@ VARIATION_COLORS = {
     "platinum", "copper", "ruby", "sapphire", "emerald", "onyx",
 }
 
+# Parallel types that must match exactly between DB variation and eBay title.
+# Prevents "Red" matching "Red Wave" or "Red Pulsar" etc.
+PARALLEL_TYPES = {
+    "wave", "pulsar", "refractor", "prizm", "holo", "foil",
+    "atomic", "laser", "cracked", "shimmer", "disco", "mosaic",
+    "scope", "ice", "lava", "choice", "tiger", "snake",
+}
+
 # Pokemon generation prefixes — optional in matching, don't penalize if missing
 POKEMON_GENERATION_TOKENS = {
     "scarlet", "violet", "sword", "shield", "sun", "moon",
@@ -408,25 +416,28 @@ def tokenize(text: str, min_len: int = 3) -> list:
 
 def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
     """Returns (required_tokens, optional_tokens)."""
-    all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
     if is_tcg:
-        TCG_NOISE    = SET_NOISE_WORDS | {"pokemon"}
-        all_tokens   = [t for t in tokenize(set_name) if t not in TCG_NOISE]
-        year_tokens  = [t for t in all_tokens if re.match(r'^\d{4}$', t)]
-        non_year     = [t for t in all_tokens if not re.match(r'^\d{4}$', t)]
-        gen_tokens   = [t for t in non_year if t in POKEMON_GENERATION_TOKENS]
-        unique_tokens = [t for t in non_year if t not in POKEMON_GENERATION_TOKENS]
+        # Strip leading year from TCG set names — "2025 Pokemon Scarlet Violet X" → "Pokemon Scarlet Violet X"
+        # Also exclude pokemon/yugioh/japanese brand words — they add no signal since we already
+        # know the sport and eBay titles don't say "japanese" (filtered out upstream).
+        TCG_NOISE     = SET_NOISE_WORDS | {"pokemon", "yugioh", "japanese"}
+        all_tokens    = [t for t in tokenize(set_name) if t not in TCG_NOISE and not re.match(r'^\d{4}$', t)]
+        year_tokens   = [t for t in tokenize(set_name) if re.match(r'^\d{4}$', t)]
+        gen_tokens    = [t for t in all_tokens if t in POKEMON_GENERATION_TOKENS]
+        unique_tokens = [t for t in all_tokens if t not in POKEMON_GENERATION_TOKENS]
         if unique_tokens:
-            # Sub-set — unique name is required, generation and year are optional
+            # Named sub-set (e.g. "Prismatic Evolutions", "Surging Sparks") —
+            # unique name words are required, generation prefix and year are optional bonuses
             required = unique_tokens
             optional = gen_tokens + year_tokens
         else:
-            # Base set — generation tokens are all we have, require them
+            # Generation-only set (e.g. just "Scarlet Violet") — require generation tokens
             required = gen_tokens
             optional = year_tokens
     else:
-        required = all_tokens
-        optional = []
+        all_tokens = [t for t in tokenize(set_name) if t not in SET_NOISE_WORDS]
+        required   = all_tokens
+        optional   = []
     return required, optional
 
 def variation_tokens(variation: str) -> list:
@@ -592,7 +603,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
         return -1.0
 
     # --- Year hard filter (sports only — TCG titles often omit year) ---
-    preferred_year = ebay_year
+    preferred_year = ebay_year2 if ebay_year2 else ebay_year
     if not is_tcg and set_year and (ebay_year or ebay_year2):
         if preferred_year != set_year and ebay_year != set_year:
             return -1.0
@@ -639,6 +650,17 @@ def score_card_match(parsed: dict, card: dict) -> float:
             if not (db_colors & title_colors):
                 return -1.0
             if title_colors - db_colors:
+                return -1.0
+
+        # --- Parallel type hard filter ---
+        # If the DB variation contains a parallel type (wave, pulsar, refractor etc.),
+        # the title must contain that same type. Prevents "Red" matching "Red Wave".
+        db_parallels    = PARALLEL_TYPES & set(v_tokens)
+        title_parallels = PARALLEL_TYPES & set(tokenize(title_lower))
+        if db_parallels:
+            if not (db_parallels & title_parallels):
+                return -1.0
+            if title_parallels - db_parallels:
                 return -1.0
 
         if v_tokens:
@@ -822,9 +844,9 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
     log.info(f"  Step 2: {time.time()-t1:.1f}s")
 
     # Step 3: score and alert
-    t2      = time.time()
-    emoji   = cat.get("emoji", "🏅")
-    color   = cat.get("color", 0x5865F2)
+    t2    = time.time()
+    emoji = cat.get("emoji", "🏅")
+    color = cat.get("color", 0x5865F2)
 
     _score_and_alert(items, title_to_player, cache, listing_type, sport, emoji, color, webhook)
     log.info(f"  Step 3: {time.time()-t2:.1f}s")
@@ -1063,7 +1085,6 @@ def run_scan():
         log.info(f"\n--- Scanning {cat_name} ---")
         try:
             if cat.get("is_multi_sport"):
-                # Load all sport indexes upfront then run combined search
                 for sport in cat["sports"]:
                     load_player_index(sport)
                 bin_items     = search_ebay(cat, "bin")
