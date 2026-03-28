@@ -72,7 +72,7 @@ PARALLEL_TYPES = {
 POKEMON_GENERATION_TOKENS = {
     "scarlet", "violet", "sword", "shield", "sun", "moon",
     "black", "white", "diamond", "pearl", "heartgold", "soulsilver",
-    "winds", "waves",
+    "winds", "waves", "mega", "evolution",
 }
 
 # Soft keyword filter applied in-process (supplements eBay query exclusions)
