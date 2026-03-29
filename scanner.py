@@ -244,7 +244,7 @@ OTHER_SPORTS_EMOJIS = {
 CATEGORIES = {
     "MLB": {
         "sport":         "MLB",
-        "ebay_query":    f"baseball card {EXCL_SPORTS}",
+        "ebay_query":    f"baseball {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Baseball}",
         "discord_env":   "DISCORD_WEBHOOK_MLB_ALERTS",
@@ -254,7 +254,7 @@ CATEGORIES = {
     },
     "NBA": {
         "sport":         "NBA",
-        "ebay_query":    f"basketball card {EXCL_SPORTS}",
+        "ebay_query":    f"basketball {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Basketball}",
         "discord_env":   "DISCORD_WEBHOOK_NBA_ALERTS",
@@ -264,7 +264,7 @@ CATEGORIES = {
     },
     "NFL": {
         "sport":         "NFL",
-        "ebay_query":    f"football card {EXCL_SPORTS}",
+        "ebay_query":    f"football {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Football}",
         "discord_env":   "DISCORD_WEBHOOK_NFL_ALERTS",
@@ -274,7 +274,7 @@ CATEGORIES = {
     },
     "NHL": {
         "sport":         "NHL",
-        "ebay_query":    f"hockey card {EXCL_SPORTS}",
+        "ebay_query":    f"hockey {EXCL_SPORTS}",
         "ebay_category": "261328",
         "aspect_filter": "categoryId:261328,Sport:{Ice Hockey}",
         "discord_env":   "DISCORD_WEBHOOK_NHL_ALERTS",
