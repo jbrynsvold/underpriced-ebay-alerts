@@ -758,22 +758,27 @@ def score_card_match(parsed: dict, card: dict) -> float:
                 score += 20
             else:
                 score -= 10
-    else:
-        title_tokens = set(tokenize(title_lower))
-        if title_tokens & STRONG_NON_BASE:
-            score -= 40
-        canonical = (card.get("canonical_name") or "").lower()
-        set_name_lower = set_name.lower()
-        canonical_extra = [
-            t for t in tokenize(canonical)
-            if t not in tokenize(set_name_lower)
-            and t not in SET_NOISE_WORDS
-            and len(t) >= 4
-        ]
-        if canonical_extra:
-            missing = [t for t in canonical_extra if t not in title_lower]
-            if missing and len(missing) / len(canonical_extra) >= 0.5:
-                return -1.0
+                
+# --- Canonical sub-product check (all cards) ---
+    # Words in canonical_name beyond set name + player name are sub-product
+    # identifiers (e.g. "Thunderbirds", "Volcanix", "Pink Fluorescent").
+    # If more than half are missing from the eBay title, reject the match.
+    canonical = (card.get("canonical_name") or "").lower()
+    set_name_lower = set_name.lower()
+    player_name_lower = (card.get("player_name") or "").lower()
+    canonical_extra = [
+        t for t in tokenize(canonical)
+        if t not in tokenize(set_name_lower)
+        and t not in tokenize(player_name_lower)
+        and t not in SET_NOISE_WORDS
+        and len(t) >= 4
+    ]
+    if canonical_extra:
+        missing = [t for t in canonical_extra if t not in title_lower]
+        if missing and len(missing) / len(canonical_extra) >= 0.5:
+            return -1.0
+
+    if not
 
     # Bonus when card numbers match
     if db_card_num and ebay_card_num and db_card_num == ebay_card_num:
