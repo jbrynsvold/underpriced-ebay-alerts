@@ -161,8 +161,24 @@ EXCL_TCG = (
 )
 
 REQUIRED_SET_TOKENS = {
+    # Original
     "sapphire", "inception", "heritage", "luminance",
     "flawless", "sterling", "zenith", "stellar",
+    # Panini products
+    "obsidian", "immaculate", "spectra", "playbook",
+    "chronicles", "absolute", "threads", "revolution",
+    "noir", "impeccable", "contenders", "certified",
+    # Upper Deck products
+    "exquisite", "artifacts", "masterpieces", "ovation",
+    "parkhurst", "goodwin", "authentix", "trilogy",
+    # Topps products
+    "archives", "tribute", "dynasty", "museum",
+    "gallery", "gypsy", "finest", "stadium",
+    # Other distinct products
+    "flair", "illusions", "mystique", "hardcourt",
+    "encased", "transcendent", "definitive", "timeless",
+    "gridiron", "tiffany", "showcase", "throwback",
+    "dominion", "allure",
 }
 
 # City/partial team name fragments that pollute the player index
@@ -668,28 +684,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
         if title_brands - db_brands:
             return -1.0
 
-    # --- Sub-product name hard filter (sports only) ---
-    # If the eBay title contains meaningful words not present in the DB card
-    # (set name + variation + player name), those are likely sub-product identifiers
-    # that indicate a different card entirely.
-    if not is_tcg:
-        player_name   = (card.get("player_name") or "").lower()
-        db_known_words = (
-            set(tokenize(set_name.lower())) |
-            set(tokenize(variation.lower())) |
-            set(tokenize(player_name)) |
-            TITLE_NOISE_WORDS |
-            {str(set_year)} if set_year else set()
-        )
-        title_words_sig = {
-            w for w in tokenize(title_lower)
-            if len(w) >= 4 and w not in TITLE_NOISE_WORDS
-        }
-        unaccounted = title_words_sig - db_known_words
-        # If 2+ significant words in the title have no match in the DB card, reject
-        if len(unaccounted) >= 2:
-            return -1.0
-
     # --- Year hard filter (sports only — TCG titles often omit year) ---
     preferred_year = ebay_year2 if ebay_year2 else ebay_year
     if not is_tcg and set_year and (ebay_year or ebay_year2):
@@ -812,7 +806,8 @@ def parse_grade(title: str) -> str:
 def search_ebay(cat: dict, listing_type: str) -> list:
     token = get_ebay_token()
     items = []
-    for page in range(2):
+    pages = 1 if listing_type == "bin" else 3
+    for page in range(pages):
         if listing_type == "bin":
             filter_str = f"buyingOptions:{{FIXED_PRICE}},price:[{int(MIN_PRICE_BIN)}..]"
             sort       = "-newlyListed"
