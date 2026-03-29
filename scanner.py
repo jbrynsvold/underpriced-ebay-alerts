@@ -103,6 +103,7 @@ PANINI_BRANDS = {
     "contenders", "donruss", "prestige", "spectra", "flawless",
     "obsidian", "phoenix", "absolute", "certified", "playbook",
     "national", "treasures", "immaculate", "noir", "impeccable",
+    "flux",
 }
 
 # Soft keyword filter applied in-process (supplements eBay query exclusions)
