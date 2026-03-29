@@ -284,7 +284,7 @@ CATEGORIES = {
     },
     "Pokemon": {
         "sport":         "Pokemon",
-        "ebay_query":    f'pokemon card -"magic the gathering" -MTG -yugioh -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
+        "ebay_query":    f'pokemon -"magic the gathering" -MTG -yugioh -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
         "ebay_category": "183454",
         "aspect_filter": "categoryId:183454,Graded:{No}",
         "discord_env":   "DISCORD_WEBHOOK_POKEMON_ALERTS",
@@ -294,7 +294,7 @@ CATEGORIES = {
     },
     "Yu-Gi-Oh": {
         "sport":         "Yu-Gi-Oh",
-        "ebay_query":    f'yugioh card -pokemon -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
+        "ebay_query":    f'yugioh -pokemon -lorcana -"one piece" -"dragon ball" -vanguard {EXCL_TCG}',
         "ebay_category": "183454",
         "aspect_filter": "categoryId:183454,Graded:{No}",
         "discord_env":   "DISCORD_WEBHOOK_YUGIOH_ALERTS",
