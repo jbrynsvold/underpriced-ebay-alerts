@@ -26,8 +26,8 @@ EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
 
 DISCOUNT_THRESHOLD = 1
-MIN_SAVINGS        = 2
-MAX_SAVINGS_PCT    = 90
+MIN_SAVINGS        = 3
+MAX_SAVINGS_PCT    = 60
 MIN_MATCH_SCORE    = 65
 MIN_WORD_LEN       = 4
 
@@ -75,6 +75,36 @@ POKEMON_GENERATION_TOKENS = {
     "winds", "waves", "mega", "evolution",
 }
 
+# Words that are generic enough to appear in any card title — not sub-product identifiers
+TITLE_NOISE_WORDS = SET_NOISE_WORDS | {
+    "the", "and", "for", "with", "from", "card", "cards",
+    "rookie", "auto", "parallel", "insert", "rare", "ultra",
+    "super", "secret", "common", "uncommon", "holo", "foil",
+    "mint", "near", "excellent", "good", "poor", "lot",
+    "single", "base", "chrome", "topps", "panini", "upper", "deck",
+    "bowman", "fleer", "score", "donruss", "leaf", "pacific",
+    "jersey", "patch", "relic", "refractor", "prizm", "optic",
+    "select", "mosaic", "chronicles", "prestige", "hoops",
+    "numbered", "print", "run", "ssp", "variation", "short",
+    "rc", "sp", "qc", "bgs", "psa", "sgc", "cgc",
+    "raw", "ungraded", "mint", "gem", "psa10", "psa9",
+    "first", "edition", "1st", "2nd", "gold", "silver",
+    "blue", "red", "green", "orange", "purple", "pink", "black", "white",
+    "nmt", "vgex", "vg", "poor", "fair",
+    "lot", "pack", "box", "set", "complete", "full",
+    "new", "old", "vintage", "modern", "classic",
+    "sharp", "clean", "nice", "great", "perfect",
+    "look", "see", "buy", "free", "ship", "fast",
+}
+
+# Panini sub-brands — if title has one not in DB, reject
+PANINI_BRANDS = {
+    "prizm", "select", "optic", "mosaic", "chronicles",
+    "contenders", "donruss", "prestige", "spectra", "flawless",
+    "obsidian", "phoenix", "absolute", "certified", "playbook",
+    "national", "treasures", "immaculate", "noir", "impeccable",
+}
+
 # Soft keyword filter applied in-process (supplements eBay query exclusions)
 EXCL_KEYWORDS = [
     "you pick", "lot of", "choose your", "complete your set", "u pick",
@@ -89,6 +119,15 @@ EXCL_KEYWORDS = [
     "pick your player", "pick & choose", "pick from list",
     "fill your set", "build a lot", "set break",
     "card pick", "singles",
+    "see description", "see desc", "see photos", "read description",
+    # Pokemon condition filters — standalone LP/HP/DMG only, not NM/LP combos
+    " hp ", " dmg ", "damaged", "heavily played", "poor condition",
+]
+
+# Pokemon-specific condition filters applied only to TCG listings
+POKEMON_CONDITION_EXCL = [
+    " lp ", "lightly played", " hp ", "heavily played",
+    " dmg", "damaged", "poor condition",
 ]
 
 # Japanese set codes that slip through the language filter
@@ -622,6 +661,35 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if title_is_xfractor and not db_is_xfractor:
         return -1.0
 
+    # --- Panini sub-brand hard filter (sports only) ---
+    if not is_tcg:
+        title_brands = PANINI_BRANDS & set(tokenize(title_lower))
+        db_brands    = PANINI_BRANDS & set(tokenize(combined_db))
+        if title_brands - db_brands:
+            return -1.0
+
+    # --- Sub-product name hard filter (sports only) ---
+    # If the eBay title contains meaningful words not present in the DB card
+    # (set name + variation + player name), those are likely sub-product identifiers
+    # that indicate a different card entirely.
+    if not is_tcg:
+        player_name   = (card.get("player_name") or "").lower()
+        db_known_words = (
+            set(tokenize(set_name.lower())) |
+            set(tokenize(variation.lower())) |
+            set(tokenize(player_name)) |
+            TITLE_NOISE_WORDS |
+            {str(set_year)} if set_year else set()
+        )
+        title_words_sig = {
+            w for w in tokenize(title_lower)
+            if len(w) >= 4 and w not in TITLE_NOISE_WORDS
+        }
+        unaccounted = title_words_sig - db_known_words
+        # If 2+ significant words in the title have no match in the DB card, reject
+        if len(unaccounted) >= 2:
+            return -1.0
+
     # --- Year hard filter (sports only — TCG titles often omit year) ---
     preferred_year = ebay_year2 if ebay_year2 else ebay_year
     if not is_tcg and set_year and (ebay_year or ebay_year2):
@@ -666,8 +734,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
         v_tokens = variation_tokens(variation)
 
         # --- Color hard filter ---
-        # If the DB variation contains a color, the title must have that same color.
-        # If the title has a *different* color, hard reject.
         db_colors    = VARIATION_COLORS & set(v_tokens)
         title_colors = VARIATION_COLORS & set(tokenize(title_lower))
         if db_colors:
@@ -677,8 +743,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
                 return -1.0
 
         # --- Parallel type hard filter ---
-        # If the DB variation contains a parallel type (wave, pulsar, refractor etc.),
-        # the title must contain that same type. Prevents "Red" matching "Red Wave".
         db_parallels    = PARALLEL_TYPES & set(v_tokens)
         title_parallels = PARALLEL_TYPES & set(tokenize(title_lower))
         if db_parallels:
@@ -717,8 +781,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
             if missing and len(missing) / len(canonical_extra) >= 0.5:
                 return -1.0
 
-    # Hard reject already handles conflicting numbers above.
-    # Bonus when both present and match (replaces old -30 penalty for missing number).
+    # Bonus when card numbers match
     if db_card_num and ebay_card_num and db_card_num == ebay_card_num:
         score += 15
 
@@ -842,8 +905,20 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
         if parse_grade(title) != "Raw":
             continue
-        if any(kw in title.lower() for kw in EXCL_KEYWORDS):
+
+        title_lower_check = " " + title.lower() + " "
+        if any(kw in title_lower_check for kw in EXCL_KEYWORDS):
             continue
+
+        # Pokemon-specific condition filter — standalone LP/HP/DMG but not NM/LP combos
+        if is_tcg and sport == "Pokemon":
+            if any(kw in title_lower_check for kw in POKEMON_CONDITION_EXCL):
+                # Allow NM/LP and NM-LP combos through
+                nm_lp = bool(re.search(r'\bnm[\s/\-]lp\b', title.lower()))
+                if not nm_lp:
+                    log.info(f"  CONDITION_FILTER: {title}")
+                    continue
+
         if is_tcg and JAPANESE_SET_CODE_RE.search(title):
             continue
 
@@ -913,7 +988,8 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
             continue
         if parse_grade(title) != "Raw":
             continue
-        if any(kw in title.lower() for kw in EXCL_KEYWORDS):
+        title_lower_check = " " + title.lower() + " "
+        if any(kw in title_lower_check for kw in EXCL_KEYWORDS):
             continue
         parsed = parse_title(title)
         if not parsed["ebay_year"] and not parsed["ebay_card_num"]:
@@ -925,14 +1001,13 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
         return
 
     # Try each sport's player index against the filtered items
-    # title_to_match: title → (player_name, sport)
     title_to_match: dict = {}
     for sport in sports:
         load_player_index(sport)
         for item in filtered:
             title = item.get("title", "")
             if title in title_to_match:
-                continue  # already matched by a prior sport
+                continue
             candidates = get_candidate_players(title, sport)
             if candidates:
                 title_to_match[title] = (candidates[0], sport)
@@ -1069,10 +1144,13 @@ def _score_and_alert(
                else  0x2ecc71 if has_30d \
                else  0xf1c40f
 
-        set_display = " ".join(filter(None, [
-            str(matched_card.get("set_year") or ""),
-            matched_card.get("set_name") or "",
-        ])).strip()
+        # Fix duplicate year — set_name already contains the year in most cases
+        set_name_str = matched_card.get("set_name") or ""
+        set_year_str = str(matched_card.get("set_year") or "")
+        if set_year_str and set_name_str.startswith(set_year_str):
+            set_display = set_name_str
+        else:
+            set_display = f"{set_year_str} {set_name_str}".strip()
 
         desc_lines = [
             f"eBay: {fmt(price)} | Market: {fmt(market_price)} ({market_source}) | Save: {savings_pct}% ({fmt(savings_dol)})",
@@ -1104,7 +1182,7 @@ def _score_and_alert(
 
 def run_scan():
     global seen_urls
-    seen_urls = set() 
+    seen_urls = set()
     log.info("=" * 60)
     log.info(f"Starting scan — {datetime.utcnow().isoformat()}")
     log.info("=" * 60)
