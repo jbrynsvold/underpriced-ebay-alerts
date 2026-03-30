@@ -116,8 +116,7 @@ TOPPS_BRANDS = {
     "tribute",     # Topps Tribute
     "stadium",     # Topps Stadium Club
     "gypsy",       # Topps Gypsy Queen
-    "allen",       # Allen & Ginter
-    "bowman",      # Bowman (technically separate but Topps owned)
+    "ginter",       # Allen & Ginter
     "dynasty",     # Topps Dynasty
     "museum",      # Topps Museum Collection
     "gallery",     # Topps Gallery
