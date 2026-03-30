@@ -107,6 +107,27 @@ PANINI_BRANDS = {
     "revolution", "crown", "royale", "luminance",
 }
 
+TOPPS_BRANDS = {
+    "finest",      # Topps Finest
+    "chrome",      # Topps Chrome
+    "heritage",    # Topps Heritage
+    "archive",     # Topps Archive
+    "archives",    # Topps Archives
+    "tribute",     # Topps Tribute
+    "stadium",     # Topps Stadium Club
+    "gypsy",       # Topps Gypsy Queen
+    "allen",       # Allen & Ginter
+    "bowman",      # Bowman (technically separate but Topps owned)
+    "dynasty",     # Topps Dynasty
+    "museum",      # Topps Museum Collection
+    "gallery",     # Topps Gallery
+    "inception",   # Topps Inception
+    "sterling",    # Topps Sterling
+    "definitive",  # Topps Definitive
+    "transcendent",# Topps Transcendent
+    "luminaries",  # Topps Luminaries
+}
+
 # Soft keyword filter applied in-process (supplements eBay query exclusions)
 EXCL_KEYWORDS = [
     "you pick", "lot of", "choose your", "complete your set", "u pick",
@@ -691,6 +712,12 @@ def score_card_match(parsed: dict, card: dict) -> float:
         db_brands    = PANINI_BRANDS & set(tokenize(combined_db))
         if title_brands - db_brands:
             return -1.0
+     # --- Topps brand hard filter (sports only) ---
+    if not is_tcg:
+        title_topps = TOPPS_BRANDS & set(tokenize(title_lower))
+        db_topps    = TOPPS_BRANDS & set(tokenize(combined_db))
+        if title_topps - db_topps:
+            return -1.0       
 
     # --- Year hard filter (sports only — TCG titles often omit year) ---
     preferred_year = ebay_year2 if ebay_year2 else ebay_year
