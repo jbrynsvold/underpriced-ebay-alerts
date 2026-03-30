@@ -104,7 +104,7 @@ PANINI_BRANDS = {
     "obsidian", "phoenix", "absolute", "certified", "playbook",
     "national", "treasures", "immaculate", "noir", "impeccable",
     "flux", "hoops", "score", "elite", "origins",
-    "revolution", "crown", "royale",
+    "revolution", "crown", "royale", "luminance",
 }
 
 # Soft keyword filter applied in-process (supplements eBay query exclusions)
@@ -590,12 +590,18 @@ def fetch_player_cards(players: list, sport: str):
                     "card_number, last_sale_date, set_name, set_year, variation, sport") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
+            .limit(50000) \
             .execute()
     except Exception as e:
         log.error(f"mv_card_metrics error: {e}")
         for p in uncached:
             cache[p] = []
         return
+    rows_returned = len(metrics.data) if metrics.data else 0
+    log.info(f"  DB fetch: {len(uncached)} players → {rows_returned} rows")
+    if rows_returned >= 1000 and rows_returned % 100 == 0:
+        log.warning(f"  DB fetch may be truncated — got exactly {rows_returned} rows for {len(uncached)} players")
+
     if not metrics.data:
         for p in uncached:
             cache[p] = []
