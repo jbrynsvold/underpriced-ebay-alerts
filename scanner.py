@@ -24,6 +24,7 @@ SUPABASE_KEY       = os.getenv("SUPABASE_KEY")
 EBAY_TOKEN_URL  = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
+BIN_WEBHOOK     = "https://discord.com/api/webhooks/1494769438099243058/HujuFzoBdB0R3643kYj3_d1ydBTWHlwDSD90Nt3ZkmVLn_4HvEMBMl8jTH6ee2rXEngV"
 
 DISCOUNT_THRESHOLD = 1
 MIN_SAVINGS        = 3
@@ -1208,7 +1209,8 @@ def _score_and_alert(
             "thumbnail":   {"url": (item.get("image") or {}).get("imageUrl", "")},
         }
 
-        post_discord(webhook, embed)
+        dest_webhook = BIN_WEBHOOK if listing_type == "bin" else webhook
+        post_discord(dest_webhook, embed)
         time.sleep(0.3)
 
 
