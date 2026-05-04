@@ -608,7 +608,7 @@ def fetch_player_cards(players: list, sport: str):
     try:
         metrics = supabase.table("mv_card_metrics") \
             .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
-                    "card_number, last_sale_date, set_name, set_year, variation, sport") \
+                    "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .limit(50000) \
@@ -798,24 +798,16 @@ def score_card_match(parsed: dict, card: dict) -> float:
         if title_tokens & STRONG_NON_BASE:
             score -= 40
 
-    # --- Canonical sub-product check (all cards) ---
-    # Words in canonical_name beyond set name + player name are sub-product
-    # identifiers (e.g. "Thunderbirds", "Volcanix", "Pink Fluorescent").
-    # If more than half are missing from the eBay title, reject the match.
-    canonical = (card.get("canonical_name") or "").lower()
-    set_name_lower = set_name.lower()
-    player_name_lower = (card.get("player_name") or "").lower()
-    canonical_extra = [
-        t for t in tokenize(canonical)
-        if t not in tokenize(set_name_lower)
-        and t not in tokenize(player_name_lower)
-        and t not in SET_NOISE_WORDS
-        and len(t) >= 4
-    ]
-    if canonical_extra:
-        missing = [t for t in canonical_extra if t not in title_lower]
-        if missing and len(missing) / len(canonical_extra) >= 0.5:
-            return -1.0
+    # --- Insert set hard filter ---
+    # If the card belongs to an insert set (e.g. "Deep Space", "Luck of the Lottery"),
+    # require that at least half its tokens appear in the eBay title.
+    insert = (card.get("insert_set") or "").strip()
+    if insert:
+        insert_tokens = [t for t in tokenize(insert) if t not in SET_NOISE_WORDS and len(t) >= 4]
+        if insert_tokens:
+            missing = [t for t in insert_tokens if t not in title_lower]
+            if missing and len(missing) / len(insert_tokens) >= 0.5:
+                return -1.0
 
     # Bonus when card numbers match
     if db_card_num and ebay_card_num and db_card_num == ebay_card_num:
