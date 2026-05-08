@@ -811,12 +811,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
                 score += 20
             else:
                 score -= 10
-    else:
-        else:
-            if variation.lower() in title_lower:
-                score += 20
-            else:
-                score -= 10
+
     else:
         title_tokens = set(tokenize(title_lower))
         if title_tokens & STRONG_NON_BASE:
