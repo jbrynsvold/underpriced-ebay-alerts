@@ -367,9 +367,12 @@ _ebay_token        = None
 _ebay_token_expiry = 0
 
 _player_card_cache: dict = {}
+_player_card_cache_time: dict = {}   # TTL tracking — keyed by (sport, player_name)
 _word_to_players:   dict = {}
 _cleaned_to_original: dict = {}
 _player_index_loaded: set = set()
+
+CACHE_TTL_SECONDS = 3600  # Re-fetch card data from DB after 1 hour
 
 # ===========================================================================
 # Helpers
@@ -601,8 +604,16 @@ def get_candidate_players(title: str, sport: str) -> list:
 # ===========================================================================
 
 def fetch_player_cards(players: list, sport: str):
-    cache    = _player_card_cache.setdefault(sport, {})
-    uncached = [p for p in players if p not in cache]
+    cache      = _player_card_cache.setdefault(sport, {})
+    cache_time = _player_card_cache_time.setdefault(sport, {})
+    now        = time.time()
+
+    # A player is "uncached" if we've never loaded them, or their data is older than TTL
+    uncached = [
+        p for p in players
+        if p not in cache or (now - cache_time.get(p, 0)) > CACHE_TTL_SECONDS
+    ]
+
     if not uncached:
         return
     try:
@@ -617,6 +628,7 @@ def fetch_player_cards(players: list, sport: str):
         log.error(f"mv_card_metrics error: {e}")
         for p in uncached:
             cache[p] = []
+            cache_time[p] = now
         return
     rows_returned = len(metrics.data) if metrics.data else 0
     log.info(f"  DB fetch: {len(uncached)} players → {rows_returned} rows")
@@ -626,7 +638,9 @@ def fetch_player_cards(players: list, sport: str):
     if not metrics.data:
         for p in uncached:
             cache[p] = []
+            cache_time[p] = now
         return
+
     grouped = {}
     for row in metrics.data:
         enriched = {
@@ -634,11 +648,15 @@ def fetch_player_cards(players: list, sport: str):
             "market_price": row.get("avg_price_30d") or row.get("current_price") or 0,
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
+
     for player, cards in grouped.items():
         cache[player] = cards
+        cache_time[player] = now
+
     for p in uncached:
         if p not in cache:
             cache[p] = []
+            cache_time[p] = now
 
 # ===========================================================================
 # Card scorer
