@@ -619,7 +619,7 @@ def fetch_player_cards(players: list, sport: str):
     try:
         metrics = supabase.table("mv_card_metrics") \
             .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
-                    "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set") \
+                    "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set, is_autograph")
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .limit(50000) \
@@ -708,8 +708,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
     is_tcg      = sport in {"Pokemon", "Yu-Gi-Oh", "Other TCG", "Non-Sport Vintage"}
 
     # --- Auto/autograph hard filter ---
-    combined_db   = (set_name + " " + variation).lower()
-    db_is_auto    = any(w in combined_db for w in ["autograph", " auto", "/a "])
+    db_is_auto    = bool(card.get("is_autograph"))
     title_is_auto = any(w in title_lower for w in ["autograph", "/a ", " auto "])
     if db_is_auto and not title_is_auto:
         return -1.0
@@ -806,6 +805,13 @@ def score_card_match(parsed: dict, card: dict) -> float:
             score += ratio_v * 60
             if len(found_v) == len(v_tokens):
                 score += 20
+            score += len(v_tokens) * 3  # specificity bonus — more tokens = more specific
+        else:
+            if variation.lower() in title_lower:
+                score += 20
+            else:
+                score -= 10
+    else:
         else:
             if variation.lower() in title_lower:
                 score += 20
@@ -1211,7 +1217,7 @@ def _score_and_alert(
         embed = {
             "title": (
                 f"🚨 {type_label} – {emoji} {sport}: "
-                f"{matched_card['canonical_name']} (Raw)"
+                f"{matched_card['canonical_name']}"
             ),
             "description": "\n".join(desc_lines),
             "url":         url,
