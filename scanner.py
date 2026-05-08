@@ -716,6 +716,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
         return -1.0
 
     # --- X-Fractor hard filter ---
+    combined_db       = (set_name + " " + variation).lower()
     db_is_xfractor    = "x-fractor" in combined_db or "xfractor" in combined_db
     title_is_xfractor = "x-fractor" in title_lower or "xfractor" in title_lower
     if db_is_xfractor and not title_is_xfractor:
