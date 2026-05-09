@@ -374,6 +374,13 @@ _player_index_loaded: set = set()
 
 CACHE_TTL_SECONDS = 3600  # Re-fetch card data from DB after 1 hour
 
+# TCG sport names — used for schema routing
+TCG_SPORTS = {
+    'Pokemon', 'Yu-Gi-Oh', 'One Piece', 'Magic: The Gathering',
+    'Disney Lorcana', 'Dragon Ball Super', 'Digimon', 'Gundam TCG',
+    'Other TCG', 'Weiss Schwarz',
+}
+
 # ===========================================================================
 # Helpers
 # ===========================================================================
@@ -527,12 +534,9 @@ def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
         gen_tokens    = [t for t in all_tokens if t in POKEMON_GENERATION_TOKENS]
         unique_tokens = [t for t in all_tokens if t not in POKEMON_GENERATION_TOKENS]
         if unique_tokens:
-            # Named sub-set (e.g. "Prismatic Evolutions", "Surging Sparks") —
-            # unique name words are required, generation prefix and year are optional bonuses
             required = unique_tokens
             optional = gen_tokens + year_tokens
         else:
-            # Generation-only set (e.g. just "Scarlet Violet") — require generation tokens
             required = gen_tokens
             optional = year_tokens
     else:
@@ -552,13 +556,21 @@ def variation_tokens(variation: str) -> list:
 def load_player_index(sport: str):
     if sport in _player_index_loaded:
         return
-    log.info(f"Loading {sport} player names...")
-    result = supabase.table("player_name_index") \
-        .select("player_name") \
-        .eq("sport", sport) \
+
+    # ── CHANGED: route to correct schema based on sport type ──────────────────
+    is_tcg     = sport in TCG_SPORTS
+    schema     = "tcg" if is_tcg else "sports"
+    name_col   = "character_name" if is_tcg else "player_name"
+    filter_col = "title" if is_tcg else "sport"
+    # ──────────────────────────────────────────────────────────────────────────
+
+    log.info(f"Loading {sport} names from {schema}.player_name_index...")
+    result = supabase.table(f"{schema}.player_name_index") \
+        .select(name_col) \
+        .eq(filter_col, sport) \
         .limit(50000) \
         .execute()
-    all_names = [r["player_name"] for r in (result.data or []) if r.get("player_name")]
+    all_names = [r[name_col] for r in (result.data or []) if r.get(name_col)]
     word_map    = {}
     cleaned_map = {}
     seen        = set()
@@ -574,7 +586,7 @@ def load_player_index(sport: str):
     _word_to_players[sport]     = word_map
     _cleaned_to_original[sport] = cleaned_map
     _player_index_loaded.add(sport)
-    log.info(f"{sport}: loaded {len(cleaned_map)} players, {len(word_map)} index words")
+    log.info(f"{sport} ({schema}): loaded {len(cleaned_map)} names, {len(word_map)} index words")
 
 def get_candidate_players(title: str, sport: str) -> list:
     title_lower = normalize_title(title).lower()
@@ -705,7 +717,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
     db_card_num = (card.get("card_number") or "").lstrip("0")
     is_base     = variation.lower() in BASE_VARIATIONS
     sport       = card.get("sport", "")
-    is_tcg      = sport in {"Pokemon", "Yu-Gi-Oh", "Other TCG", "Non-Sport Vintage"}
+    is_tcg      = sport in TCG_SPORTS
 
     # --- Auto/autograph hard filter ---
     db_is_auto    = bool(card.get("is_autograph"))
@@ -819,8 +831,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
             score -= 40
 
     # --- Insert set hard filter ---
-    # If the card belongs to an insert set (e.g. "Deep Space", "Luck of the Lottery"),
-    # require that at least half its tokens appear in the eBay title.
     insert = (card.get("insert_set") or "").strip()
     if insert:
         insert_tokens = [t for t in tokenize(insert) if t not in SET_NOISE_WORDS and len(t) >= 4]
@@ -1174,8 +1184,8 @@ def _score_and_alert(
         record_alert(url)
 
         log.info(
-            f"  DEAL: {matched_card['canonical_name']} | "
-            f"eBay: {fmt(price)} | Market: {fmt(market_price)} | Save: {savings_pct}%"
+            f"  DEAL: {matched_card['canonical_name']} | eBay: {fmt(price)} | "
+            f"Market: {fmt(market_price)} | Save: {savings_pct}%"
         )
 
         market_source   = "30d avg" if matched_card.get("avg_price_30d") else "⚠️ last sale only"
