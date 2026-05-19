@@ -629,6 +629,7 @@ def fetch_player_cards(players: list, sport: str):
     try:
         metrics = supabase.table("mv_card_metrics") \
             .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
+                    "avg_price_3d, sale_count_3d, "
                     "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set, is_autograph") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
@@ -653,9 +654,11 @@ def fetch_player_cards(players: list, sport: str):
 
     grouped = {}
     for row in metrics.data:
+        has_3d = (row.get("avg_price_3d") or 0) > 0 and (row.get("sale_count_3d") or 0) >= 3
         enriched = {
             **row,
-            "market_price": row.get("avg_price_30d") or row.get("current_price") or 0,
+            "market_price": row["avg_price_3d"] if has_3d else (row.get("avg_price_30d") or row.get("current_price") or 0),
+            "price_label":  "3d avg" if has_3d else ("30d avg" if row.get("avg_price_30d") else "last sale"),
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
 
@@ -1186,7 +1189,9 @@ def _score_and_alert(
             f"Market: {fmt(market_price)} | Save: {savings_pct}%"
         )
 
-        market_source   = "30d avg" if matched_card.get("avg_price_30d") else "⚠️ last sale only"
+        market_source   = matched_card.get("price_label", "30d avg")
+        if not matched_card.get("avg_price_3d") and not matched_card.get("avg_price_30d"):
+            market_source = "⚠️ last sale only"
         last_sale_raw   = matched_card.get("last_sale_date")
         last_sale       = last_sale_raw[:10] if last_sale_raw else "unknown"
         type_label      = "🏷️ Buy It Now" if listing_type == "bin" else "⏱️ Auction"
