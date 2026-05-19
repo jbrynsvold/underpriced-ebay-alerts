@@ -658,7 +658,7 @@ def fetch_player_cards(players: list, sport: str):
         has_3d = (row.get("avg_price_3d") or 0) > 0 and (row.get("sale_count_3d") or 0) >= 3
         enriched = {
             **row,
-            "market_price": row["avg_price_3d"] if has_3d else (row.get("avg_price_30d") or row.get("current_price") or 0),
+            "market_price": row["avg_price_3d"] if has_3d else (row.get("avg_price_30d") or row.get("scp_price") or row.get("tcgcsv_price") or row.get("current_price") or 0),
             "price_label":  "3d avg" if has_3d else ("30d avg" if row.get("avg_price_30d") else "last sale"),
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
