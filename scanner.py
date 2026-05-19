@@ -630,7 +630,8 @@ def fetch_player_cards(players: list, sport: str):
         metrics = supabase.table("mv_card_metrics") \
             .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
                     "avg_price_3d, sale_count_3d, "
-                    "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set, is_autograph") \
+                    "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set, is_autograph, "
+                    "scp_price, tcgcsv_price") \
             .in_("player_name", uncached) \
             .eq("sport", sport) \
             .limit(50000) \
@@ -1162,7 +1163,12 @@ def _score_and_alert(
         if price <= 0:
             continue
 
-        market_price = float(matched_card.get("market_price") or 0)
+        market_price = float(
+            matched_card.get("market_price")
+            or matched_card.get("scp_price")
+            or matched_card.get("tcgcsv_price")
+            or 0
+        )
         if market_price <= 0:
             continue
         if price >= market_price * DISCOUNT_THRESHOLD:
