@@ -32,8 +32,6 @@ MAX_SAVINGS_PCT    = 60
 MIN_MATCH_SCORE    = 65
 MIN_WORD_LEN       = 4
 
-# Minimum actual current price — applied in-process on real bid/listing price,
-# not just the eBay query filter (which uses opening bid for auctions).
 MIN_PRICE_BIN     = 10.00
 MIN_PRICE_AUCTION =  5.00
 
@@ -52,8 +50,6 @@ STRONG_NON_BASE = {
     "reverse", "fullart", "altart", "promo", "kaboom", "horizontal",
 }
 
-# Colors that must match exactly between DB variation and eBay title.
-# If the DB card has one of these and the title has a *different* one, hard reject.
 VARIATION_COLORS = {
     "black", "white", "red", "blue", "green", "yellow", "orange", "purple",
     "pink", "brown", "grey", "gray", "gold", "silver", "bronze",
@@ -61,22 +57,18 @@ VARIATION_COLORS = {
     "platinum", "copper", "ruby", "sapphire", "emerald", "onyx",
 }
 
-# Parallel types that must match exactly between DB variation and eBay title.
-# Prevents "Red" matching "Red Wave" or "Red Pulsar" etc.
 PARALLEL_TYPES = {
     "wave", "pulsar", "refractor", "prizm", "holo", "foil",
     "atomic", "laser", "cracked", "shimmer", "disco", "mosaic",
     "scope", "ice", "lava", "choice", "tiger", "snake",
 }
 
-# Pokemon generation prefixes — optional in matching, don't penalize if missing
 POKEMON_GENERATION_TOKENS = {
     "scarlet", "violet", "sword", "shield", "sun", "moon",
     "black", "white", "diamond", "pearl", "heartgold", "soulsilver",
     "winds", "waves", "mega", "evolution",
 }
 
-# Words that are generic enough to appear in any card title — not sub-product identifiers
 TITLE_NOISE_WORDS = SET_NOISE_WORDS | {
     "the", "and", "for", "with", "from", "card", "cards",
     "rookie", "auto", "parallel", "insert", "rare", "ultra",
@@ -98,7 +90,6 @@ TITLE_NOISE_WORDS = SET_NOISE_WORDS | {
     "look", "see", "buy", "free", "ship", "fast",
 }
 
-# Panini sub-brands — if title has one not in DB, reject
 PANINI_BRANDS = {
     "prizm", "select", "optic", "mosaic", "chronicles",
     "contenders", "donruss", "prestige", "spectra", "flawless",
@@ -109,26 +100,12 @@ PANINI_BRANDS = {
 }
 
 TOPPS_BRANDS = {
-    "finest",      # Topps Finest
-    "chrome",      # Topps Chrome
-    "heritage",    # Topps Heritage
-    "archive",     # Topps Archive
-    "archives",    # Topps Archives
-    "tribute",     # Topps Tribute
-    "stadium",     # Topps Stadium Club
-    "gypsy",       # Topps Gypsy Queen
-    "ginter",       # Allen & Ginter
-    "dynasty",     # Topps Dynasty
-    "museum",      # Topps Museum Collection
-    "gallery",     # Topps Gallery
-    "inception",   # Topps Inception
-    "sterling",    # Topps Sterling
-    "definitive",  # Topps Definitive
-    "transcendent",# Topps Transcendent
-    "luminaries",  # Topps Luminaries
+    "finest", "chrome", "heritage", "archive", "archives",
+    "tribute", "stadium", "gypsy", "ginter", "dynasty",
+    "museum", "gallery", "inception", "sterling", "definitive",
+    "transcendent", "luminaries",
 }
 
-# Soft keyword filter applied in-process (supplements eBay query exclusions)
 EXCL_KEYWORDS = [
     "you pick", "lot of", "choose your", "complete your set", "u pick",
     "card lot", "pack of", "box of", "blaster", "hobby box",
@@ -143,17 +120,22 @@ EXCL_KEYWORDS = [
     "fill your set", "build a lot", "set break",
     "card pick", "singles",
     "see description", "see desc", "see photos", "read description",
-    # Pokemon condition filters — standalone LP/HP/DMG only, not NM/LP combos
-    " hp ", " dmg ", "damaged", "heavily played", "poor condition",
+    " dmg ", "damaged", "heavily played", "poor condition",
 ]
 
-# Pokemon-specific condition filters applied only to TCG listings
-POKEMON_CONDITION_EXCL = [
-    " lp ", "lightly played", " hp ", "heavily played",
-    " dmg", "damaged", "poor condition",
-]
+# ===========================================================================
+# Condition filter — applied universally to all sports and TCG
+# \b word boundaries ensure partial matches (e.g. "Felipe", "Ralph") are safe
+# HP requires no adjacent digit to avoid filtering "200 HP" Pokemon stat lines
+# NM/LP combos are explicitly allowed downstream
+# ===========================================================================
+CONDITION_FILTER_RE = re.compile(
+    r'\b(lp|mp|dmg|lightly\s+played|moderately\s+played|heavily\s+played|'
+    r'damaged|poor\s+condition|played\s+condition)\b'
+    r'|(?<!\d\s)(?<!\d)\bHP\b(?!\s*\d)',
+    re.IGNORECASE
+)
 
-# Japanese set codes that slip through the language filter
 JAPANESE_SET_CODE_RE = re.compile(
     r'\b(sv\d+[a-zA-Z]*|SV-P|SV[0-9]+[a-zA-Z]|s\d+[a-zA-Z]|SM\d+|XY\d+|BW\d+)\b'
 )
@@ -184,27 +166,21 @@ EXCL_TCG = (
 )
 
 REQUIRED_SET_TOKENS = {
-    # Original
     "sapphire", "inception", "heritage", "luminance",
     "flawless", "sterling", "zenith", "stellar",
-    # Panini products
     "obsidian", "immaculate", "spectra", "playbook",
     "chronicles", "absolute", "threads", "revolution",
     "noir", "impeccable", "contenders", "certified",
-    # Upper Deck products
     "exquisite", "artifacts", "masterpieces", "ovation",
     "parkhurst", "goodwin", "authentix", "trilogy",
-    # Topps products
     "archives", "tribute", "dynasty", "museum",
     "gallery", "gypsy", "finest", "stadium",
-    # Other distinct products
     "flair", "illusions", "mystique", "hardcourt",
     "encased", "transcendent", "definitive", "timeless",
     "gridiron", "tiffany", "showcase", "throwback",
     "dominion", "allure",
 }
 
-# City/partial team name fragments that pollute the player index
 CITY_FRAGMENTS = {
     "Los Angeles", "New York", "San Francisco", "Washington Senators",
     "Washington", "Chicago", "Boston", "Oakland", "Detroit",
@@ -217,7 +193,6 @@ CITY_FRAGMENTS = {
 }
 
 TEAM_NAMES = {
-    # MLB
     "Baltimore Orioles", "Boston Red Sox", "New York Yankees", "Los Angeles Dodgers",
     "Chicago Cubs", "Houston Astros", "Atlanta Braves", "San Francisco Giants",
     "St. Louis Cardinals", "Philadelphia Phillies", "New York Mets", "Los Angeles Angels",
@@ -226,7 +201,6 @@ TEAM_NAMES = {
     "Texas Rangers", "Oakland Athletics", "San Diego Padres", "Colorado Rockies",
     "Arizona Diamondbacks", "Miami Marlins", "Pittsburgh Pirates", "Cincinnati Reds",
     "Milwaukee Brewers", "Washington Nationals",
-    # NBA
     "Los Angeles Lakers", "Boston Celtics", "Chicago Bulls", "Golden State Warriors",
     "Miami Heat", "San Antonio Spurs", "Dallas Mavericks", "Phoenix Suns",
     "Denver Nuggets", "Milwaukee Bucks", "Brooklyn Nets", "Philadelphia 76ers",
@@ -235,7 +209,6 @@ TEAM_NAMES = {
     "Portland Trail Blazers", "Indiana Pacers", "Atlanta Hawks", "Charlotte Hornets",
     "Detroit Pistons", "Washington Wizards", "Orlando Magic", "Minnesota Timberwolves",
     "Houston Rockets", "Los Angeles Clippers",
-    # NFL
     "Kansas City Chiefs", "San Francisco 49ers", "Dallas Cowboys", "New England Patriots",
     "Green Bay Packers", "Pittsburgh Steelers", "Baltimore Ravens", "Buffalo Bills",
     "Philadelphia Eagles", "Cincinnati Bengals", "Los Angeles Rams", "Miami Dolphins",
@@ -244,7 +217,6 @@ TEAM_NAMES = {
     "New York Jets", "Washington Commanders", "Carolina Panthers", "Atlanta Falcons",
     "Detroit Lions", "Arizona Cardinals", "Los Angeles Chargers", "Indianapolis Colts",
     "Tennessee Titans", "Jacksonville Jaguars", "Cleveland Browns", "Houston Texans",
-    # NHL
     "Toronto Maple Leafs", "Montreal Canadiens", "Boston Bruins", "New York Rangers",
     "Chicago Blackhawks", "Detroit Red Wings", "Philadelphia Flyers", "Edmonton Oilers",
     "Pittsburgh Penguins", "Colorado Avalanche", "Tampa Bay Lightning", "Vegas Golden Knights",
@@ -256,7 +228,6 @@ TEAM_NAMES = {
     "Hartford Whalers", "Atlanta Thrashers",
 }
 
-# Sport labels used in embed titles for the combined OtherSports category
 OTHER_SPORTS_EMOJIS = {
     "Soccer":    "⚽",
     "UFC/MMA":   "🥊",
@@ -325,9 +296,6 @@ CATEGORIES = {
         "color":         0x6A0DAD,
         "is_tcg":        True,
     },
-    # Soccer, UFC/MMA, Golf, and Formula 1 combined into a single eBay search.
-    # All alerts go to one "other-sports" Discord channel.
-    # Player matching runs against each sport's index in sequence.
     "OtherSports": {
         "sports":        ["Soccer", "UFC/MMA", "Golf", "Formula 1"],
         "ebay_query":    f"card {EXCL_SPORTS}",
@@ -367,14 +335,13 @@ _ebay_token        = None
 _ebay_token_expiry = 0
 
 _player_card_cache: dict = {}
-_player_card_cache_time: dict = {}   # TTL tracking — keyed by (sport, player_name)
+_player_card_cache_time: dict = {}
 _word_to_players:   dict = {}
 _cleaned_to_original: dict = {}
 _player_index_loaded: set = set()
 
-CACHE_TTL_SECONDS = 3600  # Re-fetch card data from DB after 1 hour
+CACHE_TTL_SECONDS = 3600
 
-# TCG sport names — used for schema routing
 TCG_SPORTS = {
     'Pokemon', 'Yu-Gi-Oh', 'One Piece', 'Magic: The Gathering',
     'Disney Lorcana', 'Dragon Ball Super', 'Digimon', 'Gundam TCG',
@@ -389,12 +356,10 @@ def fmt(n: float) -> str:
     return f"${n:,.2f}"
 
 def fmt_end_time(iso_str: str) -> str:
-    """Convert eBay itemEndDate ISO string to Central time (CDT/CST)."""
     try:
         dt      = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         now_utc = datetime.now(timezone.utc)
         year    = now_utc.year
-        # DST: second Sunday in March → first Sunday in November
         dst_start = datetime(year, 3,  8, 2, tzinfo=timezone.utc) + timedelta(days=(6 - datetime(year, 3,  8).weekday()) % 7)
         dst_end   = datetime(year, 11, 1, 2, tzinfo=timezone.utc) + timedelta(days=(6 - datetime(year, 11, 1).weekday()) % 7)
         is_cdt    = dst_start <= now_utc < dst_end
@@ -406,11 +371,6 @@ def fmt_end_time(iso_str: str) -> str:
         return iso_str
 
 def get_item_url(item: dict) -> str:
-    """
-    Build a stable direct eBay item URL from itemId.
-    itemWebUrl redirects to evergreen/similar listings once an auction ends.
-    The /itm/{numeric_id} format is stable and always points to the actual listing.
-    """
     item_id = item.get("itemId", "")
     if item_id:
         numeric = re.search(r'\d{8,}', item_id)
@@ -440,7 +400,6 @@ def record_alert(url: str):
 # ===========================================================================
 
 TITLE_EXPANSIONS = [
-    # Pokemon — current/modern series
     (r'\bS&V\b',                        'scarlet violet'),
     (r'\bScarlet\s*&\s*Violet\b',       'scarlet violet'),
     (r'\bSV\s+(?=\d)',                  'scarlet violet '),
@@ -460,21 +419,16 @@ TITLE_EXPANSIONS = [
     (r'\bHeartGold\s*&?\s*SoulSilver\b','heartgold soulsilver'),
     (r'\bEvo\s+Skies\b',               'evolving skies'),
     (r'\bPrismatic\s+Evo\b',           'prismatic evolutions'),
-    # Pokemon — Winds & Waves generation
     (r'\bW&W\b',                        'winds waves'),
     (r'\bWinds\s*&\s*Waves\b',          'winds waves'),
     (r'\bWW\b(?=\s+\d)',               'winds waves '),
-    # Sports — Upper Deck
     (r'\bUD\b',                         'upper deck'),
     (r'\bU\.D\.\b',                     'upper deck'),
-    # Sports — Bowman
     (r'\bBCP\b',                        'bowman chrome prospects'),
     (r'\bBDP\b',                        'bowman draft picks'),
     (r'\bBC\b(?=\s+(?:Pros|Draft|Prospect))', 'bowman chrome'),
-    # Sports — Topps
     (r'\bA&G\b',                        'allen ginter'),
     (r'\bSP\s+Auth\b',                 'sp authentic'),
-    # General
     (r'\s*&\s*',                        ' '),
 ]
 
@@ -523,11 +477,7 @@ def tokenize(text: str, min_len: int = 3) -> list:
     return [w.lower() for w in re.split(r'[\W_]+', text) if len(w) >= min_len]
 
 def set_tokens(set_name: str, is_tcg: bool = False) -> tuple:
-    """Returns (required_tokens, optional_tokens)."""
     if is_tcg:
-        # Strip leading year from TCG set names — "2025 Pokemon Scarlet Violet X" → "Pokemon Scarlet Violet X"
-        # Also exclude pokemon/yugioh/japanese brand words — they add no signal since we already
-        # know the sport and eBay titles don't say "japanese" (filtered out upstream).
         TCG_NOISE     = SET_NOISE_WORDS | {"pokemon", "yugioh", "japanese"}
         all_tokens    = [t for t in tokenize(set_name) if t not in TCG_NOISE and not re.match(r'^\d{4}$', t)]
         year_tokens   = [t for t in tokenize(set_name) if re.match(r'^\d{4}$', t)]
@@ -618,7 +568,6 @@ def fetch_player_cards(players: list, sport: str):
     cache_time = _player_card_cache_time.setdefault(sport, {})
     now        = time.time()
 
-    # A player is "uncached" if we've never loaded them, or their data is older than TTL
     uncached = [
         p for p in players
         if p not in cache or (now - cache_time.get(p, 0)) > CACHE_TTL_SECONDS
@@ -721,7 +670,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
     sport       = card.get("sport", "")
     is_tcg      = sport in TCG_SPORTS
 
-    # --- Auto/autograph hard filter ---
     db_is_auto    = bool(card.get("is_autograph"))
     title_is_auto = any(w in title_lower for w in ["autograph", "/a ", " auto "])
     if db_is_auto and not title_is_auto:
@@ -729,7 +677,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if title_is_auto and not db_is_auto:
         return -1.0
 
-    # --- X-Fractor hard filter ---
     combined_db       = (set_name + " " + variation).lower()
     db_is_xfractor    = "x-fractor" in combined_db or "xfractor" in combined_db
     title_is_xfractor = "x-fractor" in title_lower or "xfractor" in title_lower
@@ -738,33 +685,28 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if title_is_xfractor and not db_is_xfractor:
         return -1.0
 
-    # --- Panini sub-brand hard filter (sports only) ---
     if not is_tcg:
         title_brands = PANINI_BRANDS & set(tokenize(title_lower))
         db_brands    = PANINI_BRANDS & set(tokenize(combined_db))
         if title_brands - db_brands:
             return -1.0
-     # --- Topps brand hard filter (sports only) ---
     if not is_tcg:
         title_topps = TOPPS_BRANDS & set(tokenize(title_lower))
         db_topps    = TOPPS_BRANDS & set(tokenize(combined_db))
         if title_topps - db_topps:
-            return -1.0       
+            return -1.0
 
-    # --- Year hard filter (sports only — TCG titles often omit year) ---
     preferred_year = ebay_year2 if ebay_year2 else ebay_year
     if not is_tcg and set_year and (ebay_year or ebay_year2):
         if preferred_year != set_year and ebay_year != set_year:
             return -1.0
 
-    # --- Card number hard filter ---
     if ebay_card_num and db_card_num:
         if ebay_card_num != db_card_num:
             return -1.0
 
     score = 0.0
 
-    # --- Set name matching ---
     set_name_normalized = normalize_title(set_name)
     required_tokens, optional_tokens = set_tokens(set_name_normalized, is_tcg=is_tcg)
     required_set_distinguishers = REQUIRED_SET_TOKENS & set(required_tokens)
@@ -785,16 +727,13 @@ def score_card_match(parsed: dict, card: dict) -> float:
     else:
         score += 10
 
-    # Optional generation tokens give bonus if present
     if optional_tokens:
         found_opt = [t for t in optional_tokens if t in title_lower]
         score += (len(found_opt) / len(optional_tokens)) * 15
 
-    # --- Variation matching ---
     if not is_base:
         v_tokens = variation_tokens(variation)
 
-        # --- Color hard filter ---
         db_colors    = VARIATION_COLORS & set(v_tokens)
         title_colors = VARIATION_COLORS & set(tokenize(title_lower))
         if db_colors:
@@ -803,7 +742,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
             if title_colors - db_colors:
                 return -1.0
 
-        # --- Parallel type hard filter ---
         db_parallels    = PARALLEL_TYPES & set(v_tokens)
         title_parallels = PARALLEL_TYPES & set(tokenize(title_lower))
         if db_parallels:
@@ -820,7 +758,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
             score += ratio_v * 60
             if len(found_v) == len(v_tokens):
                 score += 20
-            score += len(v_tokens) * 3  # specificity bonus — more tokens = more specific
+            score += len(v_tokens) * 3
         else:
             if variation.lower() in title_lower:
                 score += 20
@@ -832,7 +770,6 @@ def score_card_match(parsed: dict, card: dict) -> float:
         if title_tokens & STRONG_NON_BASE:
             score -= 40
 
-    # --- Insert set hard filter ---
     insert = (card.get("insert_set") or "").strip()
     if insert:
         insert_tokens = [t for t in tokenize(insert) if t not in SET_NOISE_WORDS and len(t) >= 4]
@@ -841,11 +778,9 @@ def score_card_match(parsed: dict, card: dict) -> float:
             if missing and len(missing) / len(insert_tokens) >= 0.5:
                 return -1.0
 
-    # Bonus when card numbers match
     if db_card_num and ebay_card_num and db_card_num == ebay_card_num:
         score += 15
 
-    # --- Year bonus (TCG: optional bonus only, not a hard filter) ---
     if set_year and (preferred_year == set_year or ebay_year == set_year):
         score += 10
 
@@ -935,7 +870,6 @@ def post_discord(webhook_url: str, embed: dict):
 # ===========================================================================
 
 def process_items(items: list, listing_type: str, sport: str, cat: dict):
-    """Process eBay items for a single-sport category."""
     if not items:
         return
 
@@ -946,7 +880,6 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 
     log.info(f"  --- processItems: type={listing_type} sport={sport} count={len(items)} ---")
 
-    # Step 1: pre-filter + player matching
     title_to_player = {}
     for item in items:
         title = item.get("title", "")
@@ -971,14 +904,13 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
         if any(kw in title_lower_check for kw in EXCL_KEYWORDS):
             continue
 
-        # Pokemon-specific condition filter — standalone LP/HP/DMG but not NM/LP combos
-        if is_tcg and sport == "Pokemon":
-            if any(kw in title_lower_check for kw in POKEMON_CONDITION_EXCL):
-                # Allow NM/LP and NM-LP combos through
-                nm_lp = bool(re.search(r'\bnm[\s/\-]lp\b', title.lower()))
-                if not nm_lp:
-                    log.info(f"  CONDITION_FILTER: {title}")
-                    continue
+        # Universal condition filter — applies to all sports and TCG
+        # NM/LP combos (e.g. "NM/LP", "NM-LP") are allowed through
+        if CONDITION_FILTER_RE.search(title):
+            nm_lp = bool(re.search(r'\bnm[\s/\-]lp\b', title.lower()))
+            if not nm_lp:
+                log.info(f"  CONDITION_FILTER: {title}")
+                continue
 
         if is_tcg and JAPANESE_SET_CODE_RE.search(title):
             continue
@@ -999,12 +931,10 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
     if not title_to_player:
         return
 
-    # Step 2: fetch card data
     t1 = time.time()
     fetch_player_cards(list(set(title_to_player.values())), sport)
     log.info(f"  Step 2: {time.time()-t1:.1f}s")
 
-    # Step 3: score and alert
     t2    = time.time()
     emoji = cat.get("emoji", "🏅")
     color = cat.get("color", 0x5865F2)
@@ -1018,11 +948,6 @@ def process_items(items: list, listing_type: str, sport: str, cat: dict):
 # ===========================================================================
 
 def process_items_multi(items: list, listing_type: str, cat: dict):
-    """
-    Process eBay items for the combined OtherSports category.
-    Runs each sport's player index against the same item list,
-    takes the first match found across all sports.
-    """
     if not items:
         return
 
@@ -1032,7 +957,6 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
 
     log.info(f"  --- processItems (multi): type={listing_type} sports={sports} count={len(items)} ---")
 
-    # Pre-filter once — same rules, sport-agnostic
     filtered = []
     for item in items:
         title = item.get("title", "")
@@ -1052,6 +976,14 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
         title_lower_check = " " + title.lower() + " "
         if any(kw in title_lower_check for kw in EXCL_KEYWORDS):
             continue
+
+        # Universal condition filter — same as process_items
+        if CONDITION_FILTER_RE.search(title):
+            nm_lp = bool(re.search(r'\bnm[\s/\-]lp\b', title.lower()))
+            if not nm_lp:
+                log.info(f"  CONDITION_FILTER: {title}")
+                continue
+
         parsed = parse_title(title)
         if not parsed["ebay_year"] and not parsed["ebay_card_num"]:
             continue
@@ -1061,7 +993,6 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
     if not filtered:
         return
 
-    # Try each sport's player index against the filtered items
     title_to_match: dict = {}
     for sport in sports:
         load_player_index(sport)
@@ -1078,7 +1009,6 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
     if not title_to_match:
         return
 
-    # Fetch card data per sport
     t1 = time.time()
     by_sport: dict = {}
     for title, (player, sport) in title_to_match.items():
@@ -1087,7 +1017,6 @@ def process_items_multi(items: list, listing_type: str, cat: dict):
         fetch_player_cards(list(players), sport)
     log.info(f"  Step 2: {time.time()-t1:.1f}s")
 
-    # Score and alert — use matched card's sport for emoji
     t2 = time.time()
     for item in filtered:
         title = item.get("title", "")
@@ -1212,7 +1141,6 @@ def _score_and_alert(
                else  0x2ecc71 if has_30d \
                else  0xf1c40f
 
-        # Fix duplicate year — set_name already contains the year in most cases
         set_name_str = matched_card.get("set_name") or ""
         set_year_str = str(matched_card.get("set_year") or "")
         if set_year_str and set_name_str.startswith(set_year_str):
