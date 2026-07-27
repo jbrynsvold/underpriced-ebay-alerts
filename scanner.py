@@ -120,7 +120,7 @@ EXCL_KEYWORDS = [
     "fill your set", "build a lot", "set break",
     "card pick", "singles",
     "see description", "see desc", "see photos", "read description",
-    " dmg ", "damaged", "heavily played", "poor condition",
+    " dmg ", "damaged", "heavily played", "poor condition", "reprint",
 ]
 
 # ===========================================================================
