@@ -24,7 +24,7 @@ SUPABASE_KEY       = os.getenv("SUPABASE_KEY")
 EBAY_TOKEN_URL  = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EBAY_SCOPE      = "https://api.ebay.com/oauth/api_scope"
-BIN_WEBHOOK     = "https://discord.com/api/webhooks/1494769438099243058/HujuFzoBdB0R3643kYj3_d1ydBTWHlwDSD90Nt3ZkmVLn_4HvEMBMl8jTH6ee2rXEngV"
+BIN_WEBHOOK     = os.getenv("BIN_WEBHOOK", "")
 
 DISCOUNT_THRESHOLD = 1
 MIN_SAVINGS        = 3
@@ -577,7 +577,7 @@ def fetch_player_cards(players: list, sport: str):
         return
     try:
         metrics = supabase.table("mv_card_metrics") \
-            .select("canonical_name, grade, player_name, current_price, avg_price_30d, "
+            .select("canonical_name, grade, player_name, current_price, avg_price_30d, avg_price_7d, "
                     "avg_price_3d, sale_count_3d, "
                     "card_number, last_sale_date, set_name, set_year, variation, sport, insert_set, is_autograph, "
                     "scp_price, tcgcsv_price") \
@@ -607,8 +607,18 @@ def fetch_player_cards(players: list, sport: str):
         has_3d = (row.get("avg_price_3d") or 0) > 0 and (row.get("sale_count_3d") or 0) >= 3
         enriched = {
             **row,
-            "market_price": row["avg_price_3d"] if has_3d else (row.get("avg_price_30d") or row.get("scp_price") or row.get("tcgcsv_price") or row.get("current_price") or 0),
-            "price_label":  "3d avg" if has_3d else ("30d avg" if row.get("avg_price_30d") else "last sale"),
+            "market_price": (
+                row.get("avg_price_3d") if has_3d
+                else (row.get("avg_price_7d") or row.get("avg_price_30d")
+                      or row.get("scp_price") or row.get("tcgcsv_price")
+                      or row.get("current_price") or 0)
+            ),
+            "price_label": (
+                "3d avg" if has_3d
+                else "7d avg" if row.get("avg_price_7d")
+                else "30d avg" if row.get("avg_price_30d")
+                else "last sale"
+            ),
         }
         grouped.setdefault(row["player_name"], []).append(enriched)
 
@@ -646,7 +656,9 @@ def parse_title(title: str) -> dict:
                 ebay_year  = (1900 if y1 >= 90 else 2000) + y1
                 ebay_year2 = 2000 + y2
 
-    card_num_match = re.search(r'#\s*(\w+)', normalized)
+    # Widened to capture hyphenated card numbers (e.g. #BDC-45, #CRA-JJ),
+    # not just plain alphanumeric ones — previously the regex stopped at the hyphen.
+    card_num_match = re.search(r'#\s*([\w-]+)', normalized)
     ebay_card_num  = card_num_match.group(1).lstrip('0') if card_num_match else None
 
     return {
