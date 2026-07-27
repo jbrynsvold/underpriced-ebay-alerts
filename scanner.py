@@ -146,7 +146,7 @@ EXCL_SPORTS = (
     ' -autograph -auto -signed -"art card" -"custom card"'
     ' -"pick your player" -"pick & choose" -"pick from list"'
     ' -"fill your set" -"complete a set" -"complete the set"'
-    ' -"take your pick" -"set break"'
+    ' -"take your pick" -"set break" -"reprint"' 
 )
 
 EXCL_TCG = (
@@ -162,7 +162,7 @@ EXCL_TCG = (
     ' -"pick your player" -"pick & choose" -"pick from list"'
     ' -"fill your set" -"complete a set" -"complete the set"'
     ' -"take your pick" -"set break"'
-    ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set"'
+    ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set" -"reprint"'
 )
 
 REQUIRED_SET_TOKENS = {
