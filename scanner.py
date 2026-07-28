@@ -120,7 +120,7 @@ EXCL_KEYWORDS = [
     "fill your set", "build a lot", "set break",
     "card pick", "singles",
     "see description", "see desc", "see photos", "read description",
-    " dmg ", "damaged", "heavily played", "poor condition", "reprint",
+    " dmg ", "damaged", "heavily played", "poor condition",
 ]
 
 # ===========================================================================
@@ -146,7 +146,7 @@ EXCL_SPORTS = (
     ' -autograph -auto -signed -"art card" -"custom card"'
     ' -"pick your player" -"pick & choose" -"pick from list"'
     ' -"fill your set" -"complete a set" -"complete the set"'
-    ' -"take your pick" -"set break" -"reprint"' 
+    ' -"take your pick" -"set break"'
 )
 
 EXCL_TCG = (
@@ -162,7 +162,7 @@ EXCL_TCG = (
     ' -"pick your player" -"pick & choose" -"pick from list"'
     ' -"fill your set" -"complete a set" -"complete the set"'
     ' -"take your pick" -"set break"'
-    ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set" -"reprint"'
+    ' -"deck core" -"deck set" -"card deck" -"unopened" -"insert set"'
 )
 
 REQUIRED_SET_TOKENS = {
@@ -697,6 +697,21 @@ def score_card_match(parsed: dict, card: dict) -> float:
     if title_is_xfractor and not db_is_xfractor:
         return -1.0
 
+    # Non-Holo hard filter — a title explicitly saying "Non-Holo"/"Non Holo"
+    # must not match a DB card whose variation/set implies it IS holo.
+    title_is_non_holo = bool(re.search(r'\bnon[\s-]?holo\b', title_lower))
+    db_is_non_holo    = bool(re.search(r'\bnon[\s-]?holo\b', combined_db))
+    db_is_holo        = "holo" in combined_db and not db_is_non_holo
+    if title_is_non_holo and db_is_holo:
+        return -1.0
+
+    # Japanese/English hard filter — a Japanese-print DB card must not match
+    # an English-language listing (or vice versa).
+    title_is_japanese = "japanese" in title_lower
+    db_is_japanese    = "japanese" in combined_db or "japanese" in set_name.lower()
+    if title_is_japanese != db_is_japanese:
+        return -1.0
+
     if not is_tcg:
         title_brands = PANINI_BRANDS & set(tokenize(title_lower))
         db_brands    = PANINI_BRANDS & set(tokenize(combined_db))
@@ -780,7 +795,7 @@ def score_card_match(parsed: dict, card: dict) -> float:
     else:
         title_tokens = set(tokenize(title_lower))
         if title_tokens & STRONG_NON_BASE:
-            score -= 40
+            return -1.0
 
     insert = (card.get("insert_set") or "").strip()
     if insert:
